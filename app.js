@@ -2,10 +2,9 @@ let DATA;
 const app = document.getElementById('app');
 const START_KEY = 'atom-project-started-at';
 const RESPONSIBLES = ['Не назначен','Иван Корытник','Александр Костылев'];
-const TEAM_STATUSES = ['Не начато','Контакт установлен','Встреча назначена','Запрос отправлен','Информация получена','В работе','Ожидаем ответ','Блокер','Согласовано','Завершено'];
 let timerHandle = null;
 
-fetch('data/project.json?v=0.4.3').then(r=>r.json()).then(d=>{
+fetch('data/project.json?v=0.4.2').then(r=>r.json()).then(d=>{
   DATA=d;
   updateHeaderProgress();
   render('overview');
@@ -40,7 +39,6 @@ function render(view){
   bindChecks();
   bindStart();
   bindResponsibles();
-  bindTeamStatuses();
   updateProjectClock();
 }
 
@@ -111,8 +109,7 @@ function roadmap(){
 }
 function teams(){
   const responsibleOptions=RESPONSIBLES.map(x=>`<option value="${x}">${x}</option>`).join('');
-  const statusOptions=TEAM_STATUSES.map(x=>`<option value="${x}">${x}</option>`).join('');
-  return `<div class="section-title"><h2>Команды и RACI</h2><small>R делает · A отвечает · C консультирует · I информируется</small></div><table class="table"><thead><tr><th>Команда</th><th>RACI</th><th>Роль в проекте</th><th>Ответственный</th><th>Статус</th></tr></thead><tbody>${DATA.teams.map((r,i)=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><select class="responsible-select" data-team-index="${i}" style="width:100%;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${responsibleOptions}</select></td><td><select class="team-status-select" data-team-index="${i}" style="width:100%;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${statusOptions}</select></td></tr>`).join('')}</tbody></table>`;
+  return `<div class="section-title"><h2>Команды и RACI</h2><small>R делает · A отвечает · C консультирует · I информируется</small></div><table class="table"><thead><tr><th>Команда</th><th>RACI</th><th>Роль в проекте</th><th>Ответственный</th></tr></thead><tbody>${DATA.teams.map((r,i)=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><select class="responsible-select" data-team-index="${i}" style="width:100%;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${responsibleOptions}</select></td></tr>`).join('')}</tbody></table>`;
 }
 function sources(){return `<div class="section-title"><h2>Источники данных</h2><small>что собираем и куда передаем</small></div><table class="table"><thead><tr><th>Источник</th><th>Данные</th><th>Целевая связка</th><th>Статус</th></tr></thead><tbody>${DATA.sources_list.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${badge(effectiveStatus(r[3]))}</td></tr>`).join('')}</tbody></table>`}
 function funnel(){return `<div class="section-title"><h2>Сквозной путь клиента</h2><small>контрольная цепочка</small></div><div class="card"><div class="flow">${['Реклама','Сайт','Метрика','ELMA','Квалификация','Альфа-Авто','Договор','1С / Оплата','DWH','BI Dashboard'].map((x,i)=>`${i?'<div class="arrow">→</div>':''}<div class="node"><b>${x}</b></div>`).join('')}</div></div>`}
@@ -125,14 +122,6 @@ function bindResponsibles(){
     const key=`atom-responsible-${el.dataset.teamIndex}`;
     const saved=localStorage.getItem(key);
     el.value=saved && RESPONSIBLES.includes(saved) ? saved : 'Не назначен';
-    el.addEventListener('change',()=>localStorage.setItem(key,el.value));
-  });
-}
-function bindTeamStatuses(){
-  document.querySelectorAll('.team-status-select').forEach(el=>{
-    const key=`atom-team-status-${el.dataset.teamIndex}`;
-    const saved=localStorage.getItem(key);
-    el.value=saved && TEAM_STATUSES.includes(saved) ? saved : 'Не начато';
     el.addEventListener('change',()=>localStorage.setItem(key,el.value));
   });
 }
