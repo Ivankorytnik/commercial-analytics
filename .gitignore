@@ -1,0 +1,11 @@
+.env
+.env.*
+*.xlsx
+*.csv
+*.tsv
+*.db
+*.sqlite
+secrets/
+private_data/
+node_modules/
+.DS_Store
