@@ -14,7 +14,7 @@ const STATUS_PROGRESS = {
 };
 let timerHandle = null;
 
-fetch('data/project.json?v=0.5.0').then(r=>r.json()).then(d=>{
+fetch('data/project.json?v=0.5.2').then(r=>r.json()).then(d=>{
   DATA=d;
   updateHeaderProgress();
   render('overview');
@@ -33,8 +33,8 @@ const isStarted = () => Boolean(localStorage.getItem(START_KEY));
 
 function effectiveStatus(s){return isStarted()?s:'todo';}
 function effectiveProgress(p){return isStarted()?p:0;}
-function getStageStatus(id){return isStarted() ? (localStorage.getItem(`atom-stage-status-${id}`) || 'Не начато') : 'Не начато';}
-function getStageProgress(id){return STATUS_PROGRESS[getStageStatus(id)] || 0;}
+function getStageStatus(id){return localStorage.getItem(`atom-stage-status-${id}`) || 'Не начато';}
+function getStageProgress(id){return isStarted() ? (STATUS_PROGRESS[getStageStatus(id)] || 0) : 0;}
 function getProjectProgress(){
   if(!isStarted() || !DATA?.stages?.length) return 0;
   const total=DATA.stages.reduce((sum,s)=>sum+getStageProgress(s.id),0);
@@ -96,7 +96,6 @@ function bindStart(){
   btn.addEventListener('click',()=>{
     if(isStarted()) return;
     localStorage.setItem(START_KEY,String(Date.now()));
-    DATA.stages.forEach(s=>localStorage.setItem(`atom-stage-status-${s.id}`,'Не начато'));
     render('overview');
   });
 }
@@ -108,7 +107,7 @@ function overview(){
   const ownersReady=started?DATA.owners_ready:0;
   const blockers=started?DATA.critical_blockers:0;
   return `<div class="project-start-card"><div><div class="label">Статус проекта</div><div class="project-state">${started?'Проект запущен':'Не начат'}</div><div id="project-start-at" class="start-meta">Проект еще не начат</div></div><div class="project-clock-wrap"><div class="label">Время в проекте</div><div id="project-timer" class="project-timer">00 дн. 00:00:00</div></div><button id="start-project-btn" class="btn primary start-project-btn">${started?'Проект запущен':'Старт проекта'}</button></div>
-  <div class="grid"><div class="card kpi"><div class="label">Готовность проекта</div><div class="value">${projectProgress}%</div>${progress(projectProgress)}<div class="sub">считается по статусам этапов</div></div><div class="card kpi"><div class="label">Источники определены</div><div class="value">${sourcesReady} / ${DATA.sources}</div><div class="sub">нужна полная инвентаризация</div></div><div class="card kpi"><div class="label">Владельцы назначены</div><div class="value">${ownersReady} / ${DATA.owners}</div><div class="sub">RACI должен быть закрыт</div></div><div class="card kpi"><div class="label">Критические блокеры</div><div class="value">${blockers}</div><div class="sub">мешают сквозной связке</div></div></div>
+  <div class="grid"><div class="card kpi"><div class="label">Готовность проекта</div><div class="value">${projectProgress}%</div>${progress(projectProgress)}<div class="sub">считается по статусам этапов после старта</div></div><div class="card kpi"><div class="label">Источники определены</div><div class="value">${sourcesReady} / ${DATA.sources}</div><div class="sub">нужна полная инвентаризация</div></div><div class="card kpi"><div class="label">Владельцы назначены</div><div class="value">${ownersReady} / ${DATA.owners}</div><div class="sub">RACI должен быть закрыт</div></div><div class="card kpi"><div class="label">Критические блокеры</div><div class="value">${blockers}</div><div class="sub">мешают сквозной связке</div></div></div>
   <div class="section-title"><h2>Цель проекта</h2></div><div class="callout"><b>${DATA.goal}</b><br><br>Проект закрывается только после приемки единого рабочего дашборда.</div>`;
 }
 
@@ -124,7 +123,7 @@ function gantt(){
 function roadmap(){
   const started=isStarted();
   const options=STAGE_STATUSES.map(x=>`<option value="${x}">${x}</option>`).join('');
-  return `<div class="section-title"><h2>Этапы проекта</h2><small>${started?'0 → единый дашборд':'Проект еще не начат'}</small></div>${started?'':'<div class="callout"><b>Проект не запущен.</b> До нажатия «Старт проекта» статусы недоступны для изменения и готовность равна 0%.</div>'}<table class="table"><thead><tr><th>#</th><th>Этап</th><th>Статус</th><th>Готовность</th></tr></thead><tbody>${DATA.stages.map(s=>{const p=getStageProgress(s.id);return `<tr><td>${s.id}</td><td><b>${s.name}</b></td><td><select class="stage-status-select" data-stage-id="${s.id}" ${started?'':'disabled'} style="width:100%;min-width:170px;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${options}</select></td><td style="min-width:180px"><span id="stage-progress-value-${s.id}">${p}%</span>${progress(p)}</td></tr>`;}).join('')}</tbody></table>`;
+  return `<div class="section-title"><h2>Этапы проекта</h2><small>${started?'0 → единый дашборд':'Проект еще не начат'}</small></div>${started?'':'<div class="callout"><b>Проект не запущен.</b> Статусы можно подготовить заранее. До нажатия «Старт проекта» готовность этапов и общий прогресс остаются 0%.</div>'}<table class="table"><thead><tr><th>#</th><th>Этап</th><th>Статус</th><th>Готовность</th></tr></thead><tbody>${DATA.stages.map(s=>{const p=getStageProgress(s.id);return `<tr><td>${s.id}</td><td><b>${s.name}</b></td><td><select class="stage-status-select" data-stage-id="${s.id}" style="width:100%;min-width:170px;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${options}</select></td><td style="min-width:180px"><span id="stage-progress-value-${s.id}">${p}%</span>${progress(p)}</td></tr>`;}).join('')}</tbody></table>`;
 }
 
 function teams(){
@@ -140,12 +139,10 @@ function dod(){return `<div class="section-title"><h2>Definition of Done</h2><sm
 function bindStageStatuses(){
   document.querySelectorAll('.stage-status-select').forEach(el=>{
     const id=el.dataset.stageId;
-    const current=getStageStatus(id);
-    el.value=current;
+    el.value=getStageStatus(id);
     el.addEventListener('change',()=>{
       localStorage.setItem(`atom-stage-status-${id}`,el.value);
       render('roadmap');
-      updateHeaderProgress();
     });
   });
 }
