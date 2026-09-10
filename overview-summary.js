@@ -8,7 +8,7 @@
   }
 
   function ownerCount() {
-    if (!started() || !window.DATA && typeof DATA === 'undefined') return 0;
+    if (!started() || typeof DATA === 'undefined') return 0;
     return DATA.teams.filter((_, i) => {
       const value = localStorage.getItem(`atom-responsible-${i}`);
       return value && value !== 'Не назначен';
@@ -43,11 +43,15 @@
     };
   }
 
-  function card(label, value, sub, percent) {
+  function card(key, label, value, sub, percent) {
     const progressHtml = typeof percent === 'number'
-      ? `<div class="progress"><div style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>`
+      ? `<div class="progress"><div data-extra-progress="${key}" style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>`
       : '';
-    return `<div class="card kpi overview-extra-kpi"><div class="label">${label}</div><div class="value">${value}</div>${progressHtml}<div class="sub">${sub}</div></div>`;
+    return `<div class="card kpi overview-extra-kpi" data-summary-key="${key}"><div class="label">${label}</div><div class="value">${value}</div>${progressHtml}<div class="sub">${sub}</div></div>`;
+  }
+
+  function setText(el, value) {
+    if (el && el.textContent !== value) el.textContent = value;
   }
 
   function patchBaseCards(grid) {
@@ -55,40 +59,60 @@
     cards.forEach(c => {
       const label = c.querySelector('.label')?.textContent?.trim();
       if (label === 'Владельцы назначены') {
-        const value = c.querySelector('.value');
-        const sub = c.querySelector('.sub');
-        if (value) value.textContent = `${ownerCount()} / ${DATA.teams.length}`;
-        if (sub) sub.textContent = 'по назначенным ответственным в RACI';
+        setText(c.querySelector('.value'), `${ownerCount()} / ${DATA.teams.length}`);
+        setText(c.querySelector('.sub'), 'по назначенным ответственным в RACI');
       }
       if (label === 'Критические блокеры') {
-        const sub = c.querySelector('.sub');
-        if (sub) {
-          const active = started() ? activeBlockers().length : 0;
-          sub.textContent = `активных всего: ${active}`;
-        }
+        const active = started() ? activeBlockers().length : 0;
+        setText(c.querySelector('.sub'), `активных всего: ${active}`);
       }
     });
+  }
+
+  function updateExtraCard(grid, key, value, sub, percent) {
+    const el = grid.querySelector(`[data-summary-key="${key}"]`);
+    if (!el) return false;
+    setText(el.querySelector('.value'), value);
+    setText(el.querySelector('.sub'), sub);
+    if (typeof percent === 'number') {
+      const bar = el.querySelector(`[data-extra-progress="${key}"]`);
+      const width = `${Math.max(0, Math.min(100, percent))}%`;
+      if (bar && bar.style.width !== width) bar.style.width = width;
+    }
+    return true;
   }
 
   function renderSummary() {
     const grid = document.querySelector('#app .grid');
     const startCard = document.querySelector('#app .project-start-card');
-    if (!grid || !startCard) return;
+    if (!grid || !startCard || typeof DATA === 'undefined') return;
 
     patchBaseCards(grid);
-    grid.querySelectorAll('.overview-extra-kpi').forEach(el => el.remove());
 
     const schedule = scheduleInfo();
-    const stageTotal = DATA.stages.length;
-    const dictionaryTotal = DATA.dictionary.length;
-    const dodTotal = DATA.dod.length;
+    const values = {
+      stages: [`${stagesDone()} / ${DATA.stages.length}`, 'статус «Завершено»'],
+      dictionary: [`${dictionaryDone()} / ${DATA.dictionary.length}`, 'поля подтверждены как готовые'],
+      dod: [`${dodDone()} / ${DATA.dod.length}`, 'условия закрытия проекта'],
+      schedule: [`${schedule.percent}%`, schedule.text, schedule.percent]
+    };
 
-    grid.insertAdjacentHTML('beforeend',
-      card('Этапы завершены', `${stagesDone()} / ${stageTotal}`, 'статус «Завершено»') +
-      card('Data Dictionary', `${dictionaryDone()} / ${dictionaryTotal}`, 'поля подтверждены как готовые') +
-      card('Definition of Done', `${dodDone()} / ${dodTotal}`, 'условия закрытия проекта') +
-      card('Срок использован', `${schedule.percent}%`, schedule.text, schedule.percent)
-    );
+    const hasAll = ['stages','dictionary','dod','schedule'].every(key => grid.querySelector(`[data-summary-key="${key}"]`));
+    if (!hasAll) {
+      grid.querySelectorAll('.overview-extra-kpi').forEach(el => el.remove());
+      grid.insertAdjacentHTML('beforeend',
+        card('stages', 'Этапы завершены', values.stages[0], values.stages[1]) +
+        card('dictionary', 'Data Dictionary', values.dictionary[0], values.dictionary[1]) +
+        card('dod', 'Definition of Done', values.dod[0], values.dod[1]) +
+        card('schedule', 'Срок использован', values.schedule[0], values.schedule[1], values.schedule[2])
+      );
+      return;
+    }
+
+    updateExtraCard(grid, 'stages', values.stages[0], values.stages[1]);
+    updateExtraCard(grid, 'dictionary', values.dictionary[0], values.dictionary[1]);
+    updateExtraCard(grid, 'dod', values.dod[0], values.dod[1]);
+    updateExtraCard(grid, 'schedule', values.schedule[0], values.schedule[1], values.schedule[2]);
   }
 
   const appRoot = document.getElementById('app');
