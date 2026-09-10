@@ -1,7 +1,11 @@
 let DATA;
 const app = document.getElementById('app');
 
-fetch('data/project.json').then(r=>r.json()).then(d=>{DATA=d; render('overview');});
+fetch('data/project.json').then(r=>r.json()).then(d=>{
+  DATA=d;
+  updateHeaderProgress();
+  render('overview');
+});
 
 document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
   document.querySelectorAll('.nav').forEach(x=>x.classList.remove('active'));
@@ -11,6 +15,15 @@ document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>
 
 const badge = s => s==='done' ? '<span class="badge ok">Готово</span>' : s==='work' ? '<span class="badge work">В работе</span>' : '<span class="badge neutral">Не начато</span>';
 const progress = p => `<div class="progress"><div style="width:${p}%"></div></div>`;
+
+function updateHeaderProgress(){
+  const value = Number(DATA?.progress ?? 0);
+  const safe = Math.max(0, Math.min(100, value));
+  const label = document.getElementById('header-progress');
+  const bar = document.getElementById('header-progress-bar');
+  if(label) label.textContent = `${safe}%`;
+  if(bar) bar.style.width = `${safe}%`;
+}
 
 function render(view){
   const views={overview,roadmap,teams,sources,funnel,dictionary,issues,dod};
