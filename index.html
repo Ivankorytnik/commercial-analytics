@@ -7,8 +7,8 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>АТОМ | Единая коммерческая аналитика</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=0.3.0" />
-  <link rel="stylesheet" href="styles.css?v=0.3.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=0.4.0" />
+  <link rel="stylesheet" href="styles.css?v=0.4.0" />
 </head>
 <body>
   <header class="topbar">
@@ -17,8 +17,8 @@
       <h1>Единая коммерческая аналитика</h1>
       <p>Контрольный центр проекта до запуска единого сквозного дашборда</p>
       <div class="build-meta">
-        <span>Версия <b>v0.3.0</b></span>
-        <span>Обновлено <b>10.09.2026 · 13:00</b></span>
+        <span>Версия <b>v0.4.0</b></span>
+        <span>Обновлено <b>10.09.2026 · 13:35</b></span>
       </div>
     </div>
     <div class="header-status">
@@ -34,6 +34,7 @@
   <main class="layout">
     <aside class="sidebar">
       <button class="nav active" data-view="overview">Обзор</button>
+      <button class="nav" data-view="gantt">Диаграмма Ганта</button>
       <button class="nav" data-view="roadmap">Этапы проекта</button>
       <button class="nav" data-view="teams">Команды и RACI</button>
       <button class="nav" data-view="sources">Источники данных</button>
@@ -43,12 +44,10 @@
       <button class="nav" data-view="dod">Definition of Done</button>
     </aside>
 
-    <section class="content">
-      <div id="app"></div>
-    </section>
+    <section class="content"><div id="app"></div></section>
   </main>
 
   <footer>В MVP используются только синтетические и проектные данные. Реальные данные АТОМ не загружаются.</footer>
-  <script src="app.js?v=0.3.0"></script>
+  <script src="app.js?v=0.4.0"></script>
 </body>
 </html>
