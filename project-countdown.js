@@ -28,8 +28,7 @@
 
   function ensureCountdown() {
     const card = document.querySelector('.project-start-card');
-    if (!card) return;
-    if (document.getElementById('project-countdown')) return;
+    if (!card || document.getElementById('project-countdown')) return;
 
     const wrap = document.createElement('div');
     wrap.className = 'project-countdown-wrap';
@@ -63,27 +62,29 @@
 
     const rawStart = localStorage.getItem(START_KEY);
     if (!rawStart) {
-      counter.textContent = '90 дн. 00:00:00';
-      finishLabel.textContent = 'Отсчет начнется после старта';
+      if (counter.textContent !== '90 дн. 00:00:00') counter.textContent = '90 дн. 00:00:00';
+      if (finishLabel.textContent !== 'Отсчет начнется после старта') finishLabel.textContent = 'Отсчет начнется после старта';
       return;
     }
 
     const start = Number(rawStart);
     const finish = start + PROJECT_DURATION_MS;
     const remaining = finish - Date.now();
+    const counterText = formatRemaining(remaining);
+    const finishText = remaining > 0
+      ? `Плановое завершение: ${formatFinish(finish)}`
+      : `Плановый срок истек: ${formatFinish(finish)}`;
 
-    counter.textContent = formatRemaining(remaining);
-    if (remaining > 0) {
-      finishLabel.textContent = `Плановое завершение: ${formatFinish(finish)}`;
-    } else {
-      finishLabel.textContent = `Плановый срок истек: ${formatFinish(finish)}`;
-    }
+    if (counter.textContent !== counterText) counter.textContent = counterText;
+    if (finishLabel.textContent !== finishText) finishLabel.textContent = finishText;
   }
 
-  const observer = new MutationObserver(updateCountdown);
-  observer.observe(document.body, { childList: true, subtree: true });
+  const appRoot = document.getElementById('app');
+  if (appRoot) {
+    const observer = new MutationObserver(() => requestAnimationFrame(updateCountdown));
+    observer.observe(appRoot, { childList: true });
+  }
 
-  clearInterval(countdownTimer);
   countdownTimer = setInterval(updateCountdown, 1000);
   updateCountdown();
 })();
