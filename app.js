@@ -1,10 +1,13 @@
 let DATA;
 const app = document.getElementById('app');
+const START_KEY = 'atom-project-started-at';
+let timerHandle = null;
 
 fetch('data/project.json').then(r=>r.json()).then(d=>{
   DATA=d;
   updateHeaderProgress();
   render('overview');
+  startProjectClock();
 });
 
 document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
@@ -15,9 +18,10 @@ document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>
 
 const badge = s => s==='done' ? '<span class="badge ok">Готово</span>' : s==='work' ? '<span class="badge work">В работе</span>' : '<span class="badge neutral">Не начато</span>';
 const progress = p => `<div class="progress"><div style="width:${p}%"></div></div>`;
+const isStarted = () => Boolean(localStorage.getItem(START_KEY));
 
 function updateHeaderProgress(){
-  const value = Number(DATA?.progress ?? 0);
+  const value = isStarted() ? Number(DATA?.progress ?? 0) : 0;
   const safe = Math.max(0, Math.min(100, value));
   const label = document.getElementById('header-progress');
   const bar = document.getElementById('header-progress-bar');
@@ -29,34 +33,98 @@ function render(view){
   const views={overview,roadmap,teams,sources,funnel,dictionary,issues,dod};
   app.innerHTML=views[view]();
   bindChecks();
+  bindStart();
+  updateProjectClock();
 }
 
-function overview(){return `
+function formatStart(ts){
+  return new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'medium'}).format(new Date(ts));
+}
+
+function formatElapsed(ms){
+  const total=Math.max(0,Math.floor(ms/1000));
+  const days=Math.floor(total/86400);
+  const hours=Math.floor((total%86400)/3600);
+  const mins=Math.floor((total%3600)/60);
+  const secs=total%60;
+  const pad=n=>String(n).padStart(2,'0');
+  return `${days} дн. ${pad(hours)}:${pad(mins)}:${pad(secs)}`;
+}
+
+function startProjectClock(){
+  clearInterval(timerHandle);
+  updateProjectClock();
+  timerHandle=setInterval(updateProjectClock,1000);
+}
+
+function updateProjectClock(){
+  const ts=localStorage.getItem(START_KEY);
+  const timer=document.getElementById('project-timer');
+  const startAt=document.getElementById('project-start-at');
+  const startBtn=document.getElementById('start-project-btn');
+  if(!timer && !startAt && !startBtn) return;
+  if(!ts){
+    if(timer) timer.textContent='00 дн. 00:00:00';
+    if(startAt) startAt.textContent='Проект еще не начат';
+    if(startBtn){startBtn.disabled=false;startBtn.textContent='Старт проекта';}
+    return;
+  }
+  if(timer) timer.textContent=formatElapsed(Date.now()-Number(ts));
+  if(startAt) startAt.textContent=`Старт: ${formatStart(Number(ts))}`;
+  if(startBtn){startBtn.disabled=true;startBtn.textContent='Проект запущен';}
+}
+
+function bindStart(){
+  const btn=document.getElementById('start-project-btn');
+  if(!btn) return;
+  btn.addEventListener('click',()=>{
+    if(isStarted()) return;
+    const now=Date.now();
+    localStorage.setItem(START_KEY,String(now));
+    updateHeaderProgress();
+    render('overview');
+  });
+}
+
+function overview(){
+  const started=isStarted();
+  const projectProgress=started?DATA.progress:0;
+  const sourcesReady=started?DATA.sources_ready:0;
+  const ownersReady=started?DATA.owners_ready:0;
+  const blockers=started?DATA.critical_blockers:0;
+  return `
+  <div class="project-start-card">
+    <div>
+      <div class="label">Статус проекта</div>
+      <div class="project-state">${started?'Проект запущен':'Не начат'}</div>
+      <div id="project-start-at" class="start-meta">Проект еще не начат</div>
+    </div>
+    <div class="project-clock-wrap">
+      <div class="label">Время в проекте</div>
+      <div id="project-timer" class="project-timer">00 дн. 00:00:00</div>
+    </div>
+    <button id="start-project-btn" class="btn primary start-project-btn">${started?'Проект запущен':'Старт проекта'}</button>
+  </div>
   <div class="grid">
-    <div class="card kpi"><div class="label">Готовность проекта</div><div class="value">${DATA.progress}%</div>${progress(DATA.progress)}<div class="sub">до принятого единого дашборда</div></div>
-    <div class="card kpi"><div class="label">Источники определены</div><div class="value">${DATA.sources_ready} / ${DATA.sources}</div><div class="sub">нужна полная инвентаризация</div></div>
-    <div class="card kpi"><div class="label">Владельцы назначены</div><div class="value">${DATA.owners_ready} / ${DATA.owners}</div><div class="sub">RACI должен быть закрыт</div></div>
-    <div class="card kpi"><div class="label">Критические блокеры</div><div class="value">${DATA.critical_blockers}</div><div class="sub">мешают сквозной связке</div></div>
+    <div class="card kpi"><div class="label">Готовность проекта</div><div class="value">${projectProgress}%</div>${progress(projectProgress)}<div class="sub">до принятого единого дашборда</div></div>
+    <div class="card kpi"><div class="label">Источники определены</div><div class="value">${sourcesReady} / ${DATA.sources}</div><div class="sub">нужна полная инвентаризация</div></div>
+    <div class="card kpi"><div class="label">Владельцы назначены</div><div class="value">${ownersReady} / ${DATA.owners}</div><div class="sub">RACI должен быть закрыт</div></div>
+    <div class="card kpi"><div class="label">Критические блокеры</div><div class="value">${blockers}</div><div class="sub">мешают сквозной связке</div></div>
   </div>
   <div class="section-title"><h2>Цель проекта</h2></div>
   <div class="callout"><b>${DATA.goal}</b><br><br>Проект закрывается только после приемки единого рабочего дашборда.</div>
   <div class="section-title"><h2>Следующие действия</h2><small>Рекомендуемый порядок</small></div>
   <div class="checklist">
-    ${['Назначить владельцев Метрик, ELMA, Альфа-Авто, DATA, 1С и BI','Зафиксировать единую воронку B2B/B2C','Проверить передачу Lead ID из ELMA в Альфа-Авто','Определить Master Client ID','Согласовать состав полей и Data Dictionary','Согласовать целевую схему DWH → BI'].map((x,i)=>`<label class="check"><input type="checkbox" data-key="next-${i}"><span>${x}</span></label>`).join('')}
-  </div>`}
+    ${['Назначить владельцев Метрик, ELMA, Альфа-Авто, DATA, 1С и BI','Зафиксировать единую воронку B2B/B2C','Проверить передачу Lead ID из ELMA в Альфа-Авто','Определить Master Client ID','Согласовать состав полей и Data Dictionary','Согласовать целевую схему DWH → BI'].map((x,i)=>`<label class="check"><input type="checkbox" data-key="next-${i}" ${started?'':'disabled'}><span>${x}</span></label>`).join('')}
+  </div>`
+}
 
 function roadmap(){return `<div class="section-title"><h2>Этапы проекта</h2><small>0 → единый дашборд</small></div><table class="table"><thead><tr><th>#</th><th>Этап</th><th>Статус</th><th>Готовность</th></tr></thead><tbody>${DATA.stages.map(s=>`<tr><td>${s.id}</td><td><b>${s.name}</b></td><td>${badge(s.status)}</td><td style="min-width:180px">${s.progress}% ${progress(s.progress)}</td></tr>`).join('')}</tbody></table>`}
-
 function teams(){return `<div class="section-title"><h2>Команды и RACI</h2><small>R делает · A отвечает · C консультирует · I информируется</small></div><table class="table"><thead><tr><th>Команда</th><th>RACI</th><th>Роль в проекте</th><th>Ответственный</th></tr></thead><tbody>${DATA.teams.map(r=>`<tr>${r.map((c,i)=>`<td>${i===0?'<b>'+c+'</b>':c}</td>`).join('')}</tr>`).join('')}</tbody></table>`}
-
 function sources(){return `<div class="section-title"><h2>Источники данных</h2><small>что собираем и куда передаем</small></div><table class="table"><thead><tr><th>Источник</th><th>Данные</th><th>Целевая связка</th><th>Статус</th></tr></thead><tbody>${DATA.sources_list.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${badge(r[3])}</td></tr>`).join('')}</tbody></table>`}
-
 function funnel(){return `<div class="section-title"><h2>Сквозной путь клиента</h2><small>контрольная цепочка</small></div><div class="card"><div class="flow">${['Реклама','Сайт','Метрика','ELMA','Квалификация','Альфа-Авто','Договор','1С / Оплата','DWH','BI Dashboard'].map((x,i)=>`${i?'<div class="arrow">→</div>':''}<div class="node"><b>${x}</b></div>`).join('')}</div></div><div class="section-title"><h2>Главный тест</h2></div><div class="callout">Для любого проданного автомобиля должна быть возможность восстановить путь: <b>источник → лид → клиент → сделка → оплата → выдача</b>. Если цепочка рвется, сквозная аналитика не завершена.</div>`}
-
 function dictionary(){return `<div class="section-title"><h2>Data Dictionary</h2><small>минимальный набор для связки</small></div><table class="table"><thead><tr><th>Поле</th><th>Система</th><th>Назначение</th><th>Класс</th></tr></thead><tbody>${DATA.dictionary.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><span class="badge ${r[3]==='critical'?'bad':'work'}">${r[3]==='critical'?'Критично':'Обязательно'}</span></td></tr>`).join('')}</tbody></table>`}
-
-function issues(){return `<div class="section-title"><h2>Критические блокеры</h2><small>что мешает закрыть проект</small></div><table class="table"><thead><tr><th>Проблема</th><th>Система</th><th>Критичность</th><th>Статус</th></tr></thead><tbody>${DATA.issues.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td><span class="badge bad">${r[2]}</span></td><td>${r[3]}</td></tr>`).join('')}</tbody></table>`}
-
-function dod(){return `<div class="section-title"><h2>Definition of Done</h2><small>12 условий закрытия проекта</small></div><div class="checklist">${DATA.dod.map((x,i)=>`<label class="check"><input type="checkbox" data-key="dod-${i}"><span><b>${i+1}.</b> ${x}</span></label>`).join('')}</div><div class="callout"><b>Финальное условие:</b> коммерческий директор принимает единый дашборд как рабочий инструмент. После этого проект считается закрытым.</div>`}
+function issues(){return `<div class="section-title"><h2>Критические блокеры</h2><small>что мешает закрыть проект</small></div>${DATA.issues.length?`<table class="table"><thead><tr><th>Проблема</th><th>Система</th><th>Критичность</th><th>Статус</th></tr></thead><tbody>${DATA.issues.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td><span class="badge bad">${r[2]}</span></td><td>${r[3]}</td></tr>`).join('')}</tbody></table>`:'<div class="callout">Проект еще не начат. Блокеры будут фиксироваться по мере прохождения этапов.</div>'}`}
+function dod(){return `<div class="section-title"><h2>Definition of Done</h2><small>12 условий закрытия проекта</small></div><div class="checklist">${DATA.dod.map((x,i)=>`<label class="check"><input type="checkbox" data-key="dod-${i}" ${isStarted()?'':'disabled'}><span><b>${i+1}.</b> ${x}</span></label>`).join('')}</div><div class="callout"><b>Финальное условие:</b> коммерческий директор принимает единый дашборд как рабочий инструмент. После этого проект считается закрытым.</div>`}
 
 function bindChecks(){document.querySelectorAll('input[type=checkbox][data-key]').forEach(el=>{const k='atom-mvp-'+el.dataset.key;el.checked=localStorage.getItem(k)==='1';el.addEventListener('change',()=>localStorage.setItem(k,el.checked?'1':'0'));});}
