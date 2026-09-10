@@ -3,7 +3,7 @@ const app = document.getElementById('app');
 const START_KEY = 'atom-project-started-at';
 let timerHandle = null;
 
-fetch('data/project.json').then(r=>r.json()).then(d=>{
+fetch('data/project.json?v=0.4.0').then(r=>r.json()).then(d=>{
   DATA=d;
   updateHeaderProgress();
   render('overview');
@@ -30,7 +30,7 @@ function updateHeaderProgress(){
 }
 
 function render(view){
-  const views={overview,roadmap,teams,sources,funnel,dictionary,issues,dod};
+  const views={overview,gantt,roadmap,teams,sources,funnel,dictionary,issues,dod};
   app.innerHTML=views[view]();
   bindChecks();
   bindStart();
@@ -40,7 +40,9 @@ function render(view){
 function formatStart(ts){
   return new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'medium'}).format(new Date(ts));
 }
-
+function formatDate(ts){
+  return new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit'}).format(new Date(ts));
+}
 function formatElapsed(ms){
   const total=Math.max(0,Math.floor(ms/1000));
   const days=Math.floor(total/86400);
@@ -50,13 +52,13 @@ function formatElapsed(ms){
   const pad=n=>String(n).padStart(2,'0');
   return `${days} дн. ${pad(hours)}:${pad(mins)}:${pad(secs)}`;
 }
+function addDays(ts,days){return ts+days*86400000;}
 
 function startProjectClock(){
   clearInterval(timerHandle);
   updateProjectClock();
   timerHandle=setInterval(updateProjectClock,1000);
 }
-
 function updateProjectClock(){
   const ts=localStorage.getItem(START_KEY);
   const timer=document.getElementById('project-timer');
@@ -73,7 +75,6 @@ function updateProjectClock(){
   if(startAt) startAt.textContent=`Старт: ${formatStart(Number(ts))}`;
   if(startBtn){startBtn.disabled=true;startBtn.textContent='Проект запущен';}
 }
-
 function bindStart(){
   const btn=document.getElementById('start-project-btn');
   if(!btn) return;
@@ -119,6 +120,36 @@ function overview(){
   </div>`
 }
 
+function gantt(){
+  const plannedStart=isStarted()?Number(localStorage.getItem(START_KEY)):Date.now();
+  const tasks=[
+    ['Цели и KPI',0,7],
+    ['Команды и владельцы',0,14],
+    ['Источники лидов',4,18],
+    ['Единая воронка',10,22],
+    ['Data Dictionary',15,31],
+    ['Сквозные ID',22,38],
+    ['Интеграции',31,59],
+    ['DWH и модель данных',38,66],
+    ['Контроль качества',52,73],
+    ['Единый BI-дашборд',59,80],
+    ['Валидация с бизнесом',73,85],
+    ['Приемка и закрытие',84,90]
+  ];
+  const totalDays=90;
+  const weeks=13;
+  const weekHeaders=Array.from({length:weeks},(_,i)=>`<div class="gantt-week">Н${i+1}</div>`).join('');
+  const rows=tasks.map(([name,start,end])=>{
+    const left=(start/totalDays)*100;
+    const width=Math.max(2,((end-start)/totalDays)*100);
+    return `<div class="gantt-row"><div class="gantt-task"><b>${name}</b><small>${formatDate(addDays(plannedStart,start))} - ${formatDate(addDays(plannedStart,end))}</small></div><div class="gantt-track"><div class="gantt-grid"></div><div class="gantt-bar" style="left:${left}%;width:${width}%"></div></div></div>`;
+  }).join('');
+  return `<div class="section-title"><h2>Диаграмма Ганта</h2><small>План проекта на 3 месяца</small></div>
+  <div class="callout"><b>${isStarted()?'Гант рассчитан от фактической даты старта проекта.':'Проект еще не запущен.'}</b> ${isStarted()?'':'Сейчас показан план на 90 дней от текущей даты. После нажатия «Старт проекта» даты будут считаться от фактического старта.'}</div>
+  <div class="gantt-wrap"><div class="gantt-head"><div class="gantt-task-head">Этап</div><div class="gantt-weeks">${weekHeaders}</div></div>${rows}</div>
+  <div class="gantt-footer"><span>Старт: <b>${formatDate(plannedStart)}</b></span><span>Плановое завершение: <b>${formatDate(addDays(plannedStart,90))}</b></span><span>Срок: <b>3 месяца / 90 дней</b></span></div>`;
+}
+
 function roadmap(){return `<div class="section-title"><h2>Этапы проекта</h2><small>0 → единый дашборд</small></div><table class="table"><thead><tr><th>#</th><th>Этап</th><th>Статус</th><th>Готовность</th></tr></thead><tbody>${DATA.stages.map(s=>`<tr><td>${s.id}</td><td><b>${s.name}</b></td><td>${badge(s.status)}</td><td style="min-width:180px">${s.progress}% ${progress(s.progress)}</td></tr>`).join('')}</tbody></table>`}
 function teams(){return `<div class="section-title"><h2>Команды и RACI</h2><small>R делает · A отвечает · C консультирует · I информируется</small></div><table class="table"><thead><tr><th>Команда</th><th>RACI</th><th>Роль в проекте</th><th>Ответственный</th></tr></thead><tbody>${DATA.teams.map(r=>`<tr>${r.map((c,i)=>`<td>${i===0?'<b>'+c+'</b>':c}</td>`).join('')}</tr>`).join('')}</tbody></table>`}
 function sources(){return `<div class="section-title"><h2>Источники данных</h2><small>что собираем и куда передаем</small></div><table class="table"><thead><tr><th>Источник</th><th>Данные</th><th>Целевая связка</th><th>Статус</th></tr></thead><tbody>${DATA.sources_list.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${badge(r[3])}</td></tr>`).join('')}</tbody></table>`}
@@ -126,5 +157,4 @@ function funnel(){return `<div class="section-title"><h2>Сквозной пут
 function dictionary(){return `<div class="section-title"><h2>Data Dictionary</h2><small>минимальный набор для связки</small></div><table class="table"><thead><tr><th>Поле</th><th>Система</th><th>Назначение</th><th>Класс</th></tr></thead><tbody>${DATA.dictionary.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><span class="badge ${r[3]==='critical'?'bad':'work'}">${r[3]==='critical'?'Критично':'Обязательно'}</span></td></tr>`).join('')}</tbody></table>`}
 function issues(){return `<div class="section-title"><h2>Критические блокеры</h2><small>что мешает закрыть проект</small></div>${DATA.issues.length?`<table class="table"><thead><tr><th>Проблема</th><th>Система</th><th>Критичность</th><th>Статус</th></tr></thead><tbody>${DATA.issues.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td><span class="badge bad">${r[2]}</span></td><td>${r[3]}</td></tr>`).join('')}</tbody></table>`:'<div class="callout">Проект еще не начат. Блокеры будут фиксироваться по мере прохождения этапов.</div>'}`}
 function dod(){return `<div class="section-title"><h2>Definition of Done</h2><small>12 условий закрытия проекта</small></div><div class="checklist">${DATA.dod.map((x,i)=>`<label class="check"><input type="checkbox" data-key="dod-${i}" ${isStarted()?'':'disabled'}><span><b>${i+1}.</b> ${x}</span></label>`).join('')}</div><div class="callout"><b>Финальное условие:</b> коммерческий директор принимает единый дашборд как рабочий инструмент. После этого проект считается закрытым.</div>`}
-
 function bindChecks(){document.querySelectorAll('input[type=checkbox][data-key]').forEach(el=>{const k='atom-mvp-'+el.dataset.key;el.checked=localStorage.getItem(k)==='1';el.addEventListener('change',()=>localStorage.setItem(k,el.checked?'1':'0'));});}
