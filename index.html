@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>АТОМ | Единая коммерческая аналитика</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">АТОМ · Commercial Analytics</div>
+      <h1>Единая коммерческая аналитика</h1>
+      <p>Контрольный центр проекта до запуска единого сквозного дашборда</p>
+    </div>
+    <div class="status-pill">MVP · DEMO DATA ONLY</div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <button class="nav active" data-view="overview">Обзор</button>
+      <button class="nav" data-view="roadmap">Этапы проекта</button>
+      <button class="nav" data-view="teams">Команды и RACI</button>
+      <button class="nav" data-view="sources">Источники данных</button>
+      <button class="nav" data-view="funnel">Сквозной путь</button>
+      <button class="nav" data-view="dictionary">Data Dictionary</button>
+      <button class="nav" data-view="issues">Блокеры</button>
+      <button class="nav" data-view="dod">Definition of Done</button>
+    </aside>
+
+    <section class="content">
+      <div id="app"></div>
+    </section>
+  </main>
+
+  <footer>В MVP используются только синтетические и проектные данные. Реальные данные АТОМ не загружаются.</footer>
+  <script src="app.js"></script>
+</body>
+</html>
