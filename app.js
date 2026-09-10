@@ -15,7 +15,7 @@ const STATUS_PROGRESS = {
 };
 let timerHandle = null;
 
-fetch('data/project.json?v=0.5.3').then(r=>r.json()).then(d=>{
+fetch('data/project.json?v=0.5.4').then(r=>r.json()).then(d=>{
   DATA=d;
   updateHeaderProgress();
   render('overview');
@@ -36,6 +36,7 @@ function effectiveStatus(s){return isStarted()?s:'todo';}
 function getStageStatus(id){return localStorage.getItem(`atom-stage-status-${id}`) || 'Не начато';}
 function getStageProgress(id){return isStarted() ? (STATUS_PROGRESS[getStageStatus(id)] || 0) : 0;}
 function getSourceStatus(id){return localStorage.getItem(`atom-source-status-${id}`) || 'Не начато';}
+function getDictionaryReady(id){return localStorage.getItem(`atom-dictionary-ready-${id}`)==='1';}
 function getProjectProgress(){
   if(!isStarted() || !DATA?.stages?.length) return 0;
   const total=DATA.stages.reduce((sum,s)=>sum+getStageProgress(s.id),0);
@@ -58,6 +59,7 @@ function render(view){
   bindResponsibles();
   bindStageStatuses();
   bindSourceStatuses();
+  bindDictionaryReady();
   updateProjectClock();
   updateHeaderProgress();
 }
@@ -137,7 +139,9 @@ function sources(){
   return `<div class="section-title"><h2>Источники данных</h2><small>что собираем и куда передаем</small></div><table class="table"><thead><tr><th>Источник</th><th>Данные</th><th>Целевая связка</th><th>Статус</th></tr></thead><tbody>${DATA.sources_list.map((r,i)=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><select class="source-status-select" data-source-index="${i}" style="width:100%;min-width:190px;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${options}</select></td></tr>`).join('')}</tbody></table>`;
 }
 function funnel(){return `<div class="section-title"><h2>Сквозной путь клиента</h2><small>контрольная цепочка</small></div><div class="card"><div class="flow">${['Реклама','Сайт','Метрика','ELMA','Квалификация','Альфа-Авто','Договор','1С / Оплата','DWH','BI Dashboard'].map((x,i)=>`${i?'<div class="arrow">→</div>':''}<div class="node"><b>${x}</b></div>`).join('')}</div></div>`}
-function dictionary(){return `<div class="section-title"><h2>Data Dictionary</h2><small>минимальный набор для связки</small></div><table class="table"><thead><tr><th>Поле</th><th>Система</th><th>Назначение</th><th>Класс</th></tr></thead><tbody>${DATA.dictionary.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><span class="badge ${r[3]==='critical'?'bad':'work'}">${r[3]==='critical'?'Критично':'Обязательно'}</span></td></tr>`).join('')}</tbody></table>`}
+function dictionary(){
+  return `<div class="section-title"><h2>Data Dictionary</h2><small>минимальный набор для связки</small></div><table class="table"><thead><tr><th>Поле</th><th>Система</th><th>Назначение</th><th>Класс</th><th>Готовность</th></tr></thead><tbody>${DATA.dictionary.map((r,i)=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><span class="badge ${r[3]==='critical'?'bad':'work'}">${r[3]==='critical'?'Критично':'Обязательно'}</span></td><td><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" class="dictionary-ready" data-dictionary-index="${i}" ${getDictionaryReady(i)?'checked':''}><span>${getDictionaryReady(i)?'Готово':'Не готово'}</span></label></td></tr>`).join('')}</tbody></table>`;
+}
 function issues(){return `<div class="section-title"><h2>Критические блокеры</h2></div>${!isStarted()?'<div class="callout">Проект еще не начат. Блокеры будут фиксироваться после запуска.</div>':DATA.issues.length?`<table class="table"><tbody>${DATA.issues.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table>`:'<div class="callout">Критических блокеров пока нет.</div>'}`}
 function dod(){return `<div class="section-title"><h2>Definition of Done</h2><small>12 условий закрытия проекта</small></div><div class="checklist">${DATA.dod.map((x,i)=>`<label class="check"><input type="checkbox" data-key="dod-${i}" ${isStarted()?'':'disabled'}><span><b>${i+1}.</b> ${x}</span></label>`).join('')}</div>`}
 
@@ -158,6 +162,16 @@ function bindSourceStatuses(){
     el.addEventListener('change',()=>{
       localStorage.setItem(`atom-source-status-${id}`,el.value);
       el.value=getSourceStatus(id);
+    });
+  });
+}
+function bindDictionaryReady(){
+  document.querySelectorAll('.dictionary-ready').forEach(el=>{
+    const id=el.dataset.dictionaryIndex;
+    el.addEventListener('change',()=>{
+      localStorage.setItem(`atom-dictionary-ready-${id}`,el.checked?'1':'0');
+      const label=el.nextElementSibling;
+      if(label) label.textContent=el.checked?'Готово':'Не готово';
     });
   });
 }
