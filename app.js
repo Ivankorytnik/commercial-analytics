@@ -1,9 +1,10 @@
 let DATA;
 const app = document.getElementById('app');
 const START_KEY = 'atom-project-started-at';
+const RESPONSIBLES = ['Не назначен','Иван Корытник','Александр Костылев'];
 let timerHandle = null;
 
-fetch('data/project.json?v=0.4.1').then(r=>r.json()).then(d=>{
+fetch('data/project.json?v=0.4.2').then(r=>r.json()).then(d=>{
   DATA=d;
   updateHeaderProgress();
   render('overview');
@@ -37,6 +38,7 @@ function render(view){
   app.innerHTML=views[view]();
   bindChecks();
   bindStart();
+  bindResponsibles();
   updateProjectClock();
 }
 
@@ -105,10 +107,22 @@ function roadmap(){
   const started=isStarted();
   return `<div class="section-title"><h2>Этапы проекта</h2><small>${started?'0 → единый дашборд':'Проект еще не начат'}</small></div>${started?'':'<div class="callout"><b>Проект не запущен.</b> До нажатия «Старт проекта» все этапы имеют статус «Не начато» и готовность 0%.</div>'}<table class="table"><thead><tr><th>#</th><th>Этап</th><th>Статус</th><th>Готовность</th></tr></thead><tbody>${DATA.stages.map(s=>{const p=effectiveProgress(s.progress);const st=effectiveStatus(s.status);return `<tr><td>${s.id}</td><td><b>${s.name}</b></td><td>${badge(st)}</td><td style="min-width:180px">${p}% ${progress(p)}</td></tr>`;}).join('')}</tbody></table>`;
 }
-function teams(){return `<div class="section-title"><h2>Команды и RACI</h2><small>R делает · A отвечает · C консультирует · I информируется</small></div><table class="table"><thead><tr><th>Команда</th><th>RACI</th><th>Роль в проекте</th><th>Ответственный</th></tr></thead><tbody>${DATA.teams.map(r=>`<tr>${r.map((c,i)=>`<td>${i===0?'<b>'+c+'</b>':c}</td>`).join('')}</tr>`).join('')}</tbody></table>`}
+function teams(){
+  const options=RESPONSIBLES.map(x=>`<option value="${x}">${x}</option>`).join('');
+  return `<div class="section-title"><h2>Команды и RACI</h2><small>R делает · A отвечает · C консультирует · I информируется</small></div><table class="table"><thead><tr><th>Команда</th><th>RACI</th><th>Роль в проекте</th><th>Ответственный</th></tr></thead><tbody>${DATA.teams.map((r,i)=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><select class="responsible-select" data-team-index="${i}" style="width:100%;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${options}</select></td></tr>`).join('')}</tbody></table>`;
+}
 function sources(){return `<div class="section-title"><h2>Источники данных</h2><small>что собираем и куда передаем</small></div><table class="table"><thead><tr><th>Источник</th><th>Данные</th><th>Целевая связка</th><th>Статус</th></tr></thead><tbody>${DATA.sources_list.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${badge(effectiveStatus(r[3]))}</td></tr>`).join('')}</tbody></table>`}
 function funnel(){return `<div class="section-title"><h2>Сквозной путь клиента</h2><small>контрольная цепочка</small></div><div class="card"><div class="flow">${['Реклама','Сайт','Метрика','ELMA','Квалификация','Альфа-Авто','Договор','1С / Оплата','DWH','BI Dashboard'].map((x,i)=>`${i?'<div class="arrow">→</div>':''}<div class="node"><b>${x}</b></div>`).join('')}</div></div>`}
 function dictionary(){return `<div class="section-title"><h2>Data Dictionary</h2><small>минимальный набор для связки</small></div><table class="table"><thead><tr><th>Поле</th><th>Система</th><th>Назначение</th><th>Класс</th></tr></thead><tbody>${DATA.dictionary.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><span class="badge ${r[3]==='critical'?'bad':'work'}">${r[3]==='critical'?'Критично':'Обязательно'}</span></td></tr>`).join('')}</tbody></table>`}
 function issues(){return `<div class="section-title"><h2>Критические блокеры</h2></div>${!isStarted()?'<div class="callout">Проект еще не начат. Блокеры будут фиксироваться после запуска.</div>':DATA.issues.length?`<table class="table"><tbody>${DATA.issues.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table>`:'<div class="callout">Критических блокеров пока нет.</div>'}`}
 function dod(){return `<div class="section-title"><h2>Definition of Done</h2><small>12 условий закрытия проекта</small></div><div class="checklist">${DATA.dod.map((x,i)=>`<label class="check"><input type="checkbox" data-key="dod-${i}" ${isStarted()?'':'disabled'}><span><b>${i+1}.</b> ${x}</span></label>`).join('')}</div>`}
+
+function bindResponsibles(){
+  document.querySelectorAll('.responsible-select').forEach(el=>{
+    const key=`atom-responsible-${el.dataset.teamIndex}`;
+    const saved=localStorage.getItem(key);
+    el.value=saved && RESPONSIBLES.includes(saved) ? saved : 'Не назначен';
+    el.addEventListener('change',()=>localStorage.setItem(key,el.value));
+  });
+}
 function bindChecks(){document.querySelectorAll('input[type=checkbox][data-key]').forEach(el=>{const k='atom-mvp-'+el.dataset.key;el.checked=localStorage.getItem(k)==='1';el.addEventListener('change',()=>localStorage.setItem(k,el.checked?'1':'0'));});}
