@@ -3,6 +3,7 @@ const app = document.getElementById('app');
 const START_KEY = 'atom-project-started-at';
 const RESPONSIBLES = ['Не назначен','Иван Корытник','Александр Костылев'];
 const STAGE_STATUSES = ['Не начато','Подготовка','В работе','Ожидание данных','На согласовании','Блокер','Завершено'];
+const SOURCE_STATUSES = ['Не начато','Владелец определен','Доступ запрошен','Доступ получен','Структура данных описана','Данные получены','Интеграция в работе','На проверке','Блокер','Готово'];
 const STATUS_PROGRESS = {
   'Не начато': 0,
   'Подготовка': 10,
@@ -14,7 +15,7 @@ const STATUS_PROGRESS = {
 };
 let timerHandle = null;
 
-fetch('data/project.json?v=0.5.2').then(r=>r.json()).then(d=>{
+fetch('data/project.json?v=0.5.3').then(r=>r.json()).then(d=>{
   DATA=d;
   updateHeaderProgress();
   render('overview');
@@ -32,9 +33,9 @@ const progress = p => `<div class="progress"><div style="width:${p}%"></div></di
 const isStarted = () => Boolean(localStorage.getItem(START_KEY));
 
 function effectiveStatus(s){return isStarted()?s:'todo';}
-function effectiveProgress(p){return isStarted()?p:0;}
 function getStageStatus(id){return localStorage.getItem(`atom-stage-status-${id}`) || 'Не начато';}
 function getStageProgress(id){return isStarted() ? (STATUS_PROGRESS[getStageStatus(id)] || 0) : 0;}
+function getSourceStatus(id){return localStorage.getItem(`atom-source-status-${id}`) || 'Не начато';}
 function getProjectProgress(){
   if(!isStarted() || !DATA?.stages?.length) return 0;
   const total=DATA.stages.reduce((sum,s)=>sum+getStageProgress(s.id),0);
@@ -56,6 +57,7 @@ function render(view){
   bindStart();
   bindResponsibles();
   bindStageStatuses();
+  bindSourceStatuses();
   updateProjectClock();
   updateHeaderProgress();
 }
@@ -103,11 +105,11 @@ function bindStart(){
 function overview(){
   const started=isStarted();
   const projectProgress=getProjectProgress();
-  const sourcesReady=started?DATA.sources_ready:0;
+  const sourcesReady=started?DATA.sources_list.filter((_,i)=>getSourceStatus(i)==='Готово').length:0;
   const ownersReady=started?DATA.owners_ready:0;
   const blockers=started?DATA.critical_blockers:0;
   return `<div class="project-start-card"><div><div class="label">Статус проекта</div><div class="project-state">${started?'Проект запущен':'Не начат'}</div><div id="project-start-at" class="start-meta">Проект еще не начат</div></div><div class="project-clock-wrap"><div class="label">Время в проекте</div><div id="project-timer" class="project-timer">00 дн. 00:00:00</div></div><button id="start-project-btn" class="btn primary start-project-btn">${started?'Проект запущен':'Старт проекта'}</button></div>
-  <div class="grid"><div class="card kpi"><div class="label">Готовность проекта</div><div class="value">${projectProgress}%</div>${progress(projectProgress)}<div class="sub">считается по статусам этапов после старта</div></div><div class="card kpi"><div class="label">Источники определены</div><div class="value">${sourcesReady} / ${DATA.sources}</div><div class="sub">нужна полная инвентаризация</div></div><div class="card kpi"><div class="label">Владельцы назначены</div><div class="value">${ownersReady} / ${DATA.owners}</div><div class="sub">RACI должен быть закрыт</div></div><div class="card kpi"><div class="label">Критические блокеры</div><div class="value">${blockers}</div><div class="sub">мешают сквозной связке</div></div></div>
+  <div class="grid"><div class="card kpi"><div class="label">Готовность проекта</div><div class="value">${projectProgress}%</div>${progress(projectProgress)}<div class="sub">считается по статусам этапов после старта</div></div><div class="card kpi"><div class="label">Источники готовы</div><div class="value">${sourcesReady} / ${DATA.sources}</div><div class="sub">статус «Готово»</div></div><div class="card kpi"><div class="label">Владельцы назначены</div><div class="value">${ownersReady} / ${DATA.owners}</div><div class="sub">RACI должен быть закрыт</div></div><div class="card kpi"><div class="label">Критические блокеры</div><div class="value">${blockers}</div><div class="sub">мешают сквозной связке</div></div></div>
   <div class="section-title"><h2>Цель проекта</h2></div><div class="callout"><b>${DATA.goal}</b><br><br>Проект закрывается только после приемки единого рабочего дашборда.</div>`;
 }
 
@@ -123,14 +125,17 @@ function gantt(){
 function roadmap(){
   const started=isStarted();
   const options=STAGE_STATUSES.map(x=>`<option value="${x}">${x}</option>`).join('');
-  return `<div class="section-title"><h2>Этапы проекта</h2><small>${started?'0 → единый дашборд':'Проект еще не начат'}</small></div>${started?'':'<div class="callout"><b>Проект не запущен.</b> Статусы можно подготовить заранее. До нажатия «Старт проекта» готовность этапов и общий прогресс остаются 0%.</div>'}<table class="table"><thead><tr><th>#</th><th>Этап</th><th>Статус</th><th>Готовность</th></tr></thead><tbody>${DATA.stages.map(s=>{const p=getStageProgress(s.id);return `<tr><td>${s.id}</td><td><b>${s.name}</b></td><td><select class="stage-status-select" data-stage-id="${s.id}" style="width:100%;min-width:170px;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${options}</select></td><td style="min-width:180px"><span id="stage-progress-value-${s.id}">${p}%</span>${progress(p)}</td></tr>`;}).join('')}</tbody></table>`;
+  return `<div class="section-title"><h2>Этапы проекта</h2><small>${started?'0 → единый дашборд':'Проект еще не начат'}</small></div>${started?'':'<div class="callout"><b>Проект не запущен.</b> Статусы можно подготовить заранее. До нажатия «Старт проекта» готовность этапов и общий прогресс остаются 0%.</div>'}<table class="table"><thead><tr><th>#</th><th>Этап</th><th>Статус</th><th>Готовность</th></tr></thead><tbody>${DATA.stages.map(s=>{const p=getStageProgress(s.id);return `<tr><td>${s.id}</td><td><b>${s.name}</b></td><td><select class="stage-status-select" data-stage-id="${s.id}" style="width:100%;min-width:170px;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${options}</select></td><td style="min-width:180px"><span>${p}%</span>${progress(p)}</td></tr>`;}).join('')}</tbody></table>`;
 }
 
 function teams(){
   const responsibleOptions=RESPONSIBLES.map(x=>`<option value="${x}">${x}</option>`).join('');
   return `<div class="section-title"><h2>Команды и RACI</h2><small>R делает · A отвечает · C консультирует · I информируется</small></div><table class="table"><thead><tr><th>Команда</th><th>RACI</th><th>Роль в проекте</th><th>Ответственный</th></tr></thead><tbody>${DATA.teams.map((r,i)=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><select class="responsible-select" data-team-index="${i}" style="width:100%;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${responsibleOptions}</select></td></tr>`).join('')}</tbody></table>`;
 }
-function sources(){return `<div class="section-title"><h2>Источники данных</h2><small>что собираем и куда передаем</small></div><table class="table"><thead><tr><th>Источник</th><th>Данные</th><th>Целевая связка</th><th>Статус</th></tr></thead><tbody>${DATA.sources_list.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${badge(effectiveStatus(r[3]))}</td></tr>`).join('')}</tbody></table>`}
+function sources(){
+  const options=SOURCE_STATUSES.map(x=>`<option value="${x}">${x}</option>`).join('');
+  return `<div class="section-title"><h2>Источники данных</h2><small>что собираем и куда передаем</small></div><table class="table"><thead><tr><th>Источник</th><th>Данные</th><th>Целевая связка</th><th>Статус</th></tr></thead><tbody>${DATA.sources_list.map((r,i)=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><select class="source-status-select" data-source-index="${i}" style="width:100%;min-width:190px;padding:8px 10px;border:1px solid #dbe5e5;border-radius:8px;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px">${options}</select></td></tr>`).join('')}</tbody></table>`;
+}
 function funnel(){return `<div class="section-title"><h2>Сквозной путь клиента</h2><small>контрольная цепочка</small></div><div class="card"><div class="flow">${['Реклама','Сайт','Метрика','ELMA','Квалификация','Альфа-Авто','Договор','1С / Оплата','DWH','BI Dashboard'].map((x,i)=>`${i?'<div class="arrow">→</div>':''}<div class="node"><b>${x}</b></div>`).join('')}</div></div>`}
 function dictionary(){return `<div class="section-title"><h2>Data Dictionary</h2><small>минимальный набор для связки</small></div><table class="table"><thead><tr><th>Поле</th><th>Система</th><th>Назначение</th><th>Класс</th></tr></thead><tbody>${DATA.dictionary.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td><span class="badge ${r[3]==='critical'?'bad':'work'}">${r[3]==='critical'?'Критично':'Обязательно'}</span></td></tr>`).join('')}</tbody></table>`}
 function issues(){return `<div class="section-title"><h2>Критические блокеры</h2></div>${!isStarted()?'<div class="callout">Проект еще не начат. Блокеры будут фиксироваться после запуска.</div>':DATA.issues.length?`<table class="table"><tbody>${DATA.issues.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table>`:'<div class="callout">Критических блокеров пока нет.</div>'}`}
@@ -143,6 +148,16 @@ function bindStageStatuses(){
     el.addEventListener('change',()=>{
       localStorage.setItem(`atom-stage-status-${id}`,el.value);
       render('roadmap');
+    });
+  });
+}
+function bindSourceStatuses(){
+  document.querySelectorAll('.source-status-select').forEach(el=>{
+    const id=el.dataset.sourceIndex;
+    el.value=getSourceStatus(id);
+    el.addEventListener('change',()=>{
+      localStorage.setItem(`atom-source-status-${id}`,el.value);
+      el.value=getSourceStatus(id);
     });
   });
 }
