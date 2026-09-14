@@ -1,0 +1,59 @@
+name: Promote stable v1.11.0 to production
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout production
+        uses: actions/checkout@v4
+        with:
+          path: prod
+          fetch-depth: 0
+
+      - name: Checkout stable TEST snapshot read-only
+        uses: actions/checkout@v4
+        with:
+          repository: Ivankorytnik/commercial-analytic-test
+          ref: 6189b1ea631fd13a654a7f648b5a4210e9bd08d2
+          path: stable
+          fetch-depth: 1
+
+      - name: Mirror stable application into production
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -a --delete --exclude '.git/' stable/ prod/
+          rm -f prod/requirements-gantt-authority.js
+          rm -rf prod/.github
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('prod/index.html')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('TEST · CLOUD SYNC', 'PROD · CLOUD SYNC')
+          s = s.replace('Тестовая версия. Данные проекта синхронизируются между устройствами через облачное хранилище.', 'Рабочая версия. Данные проекта синхронизируются между устройствами через облачное хранилище.')
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Commit production snapshot
+        working-directory: prod
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Production already matches stable snapshot.'
+            exit 0
+          fi
+          git commit -m 'Deploy stable v1.11.0 LOGIC CONSOLIDATION to production'
+          git push origin main
