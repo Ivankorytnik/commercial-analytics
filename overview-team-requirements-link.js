@@ -1,0 +1,73 @@
+(function(){
+  const VERSION='1.1.0';
+  const FILTER_KEY='atom-requirements-team-filter-pending';
+  const TARGET_HASH='#management/requirements';
+  let applying=false;
+
+  function teamFromCard(card){
+    return card?.dataset?.coreTeam||card?.querySelector('.core-team-name')?.textContent?.trim()||'';
+  }
+
+  function savePending(team){
+    if(team)sessionStorage.setItem(FILTER_KEY,team);
+  }
+
+  function pendingTeam(){
+    return sessionStorage.getItem(FILTER_KEY)||'';
+  }
+
+  function clearPending(){
+    sessionStorage.removeItem(FILTER_KEY);
+  }
+
+  function goToRequirements(team){
+    if(!team)return;
+    savePending(team);
+    if(location.hash===TARGET_HASH)applyFilter();
+    else location.hash=TARGET_HASH;
+  }
+
+  function applyFilter(){
+    if(applying||!location.hash.startsWith(TARGET_HASH))return;
+    const team=pendingTeam();
+    if(!team)return;
+    const select=document.getElementById('req-enh-team');
+    if(!select)return;
+    const option=[...select.options].find(o=>o.value===team);
+    if(!option){clearPending();return;}
+    applying=true;
+    select.value=team;
+    clearPending();
+    select.dispatchEvent(new Event('change',{bubbles:true}));
+    setTimeout(()=>{applying=false;},0);
+  }
+
+  document.addEventListener('click',e=>{
+    const card=e.target.closest('.core-team-card[data-core-team], .core-team-card');
+    if(!card)return;
+    const team=teamFromCard(card);
+    if(!team)return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    goToRequirements(team);
+  },true);
+
+  let queued=false;
+  function queue(){
+    if(queued)return;
+    queued=true;
+    requestAnimationFrame(()=>{
+      queued=false;
+      applyFilter();
+    });
+  }
+
+  new MutationObserver(queue).observe(document.body,{childList:true,subtree:true});
+  ['hashchange','atom-view-rendered','atom-sync-update'].forEach(ev=>window.addEventListener(ev,queue));
+
+  window.ATOM_OVERVIEW_TEAM_REQUIREMENTS_LINK={version:VERSION,goToRequirements,applyFilter};
+  setTimeout(queue,300);
+  setTimeout(queue,900);
+  setTimeout(queue,1800);
+})();
