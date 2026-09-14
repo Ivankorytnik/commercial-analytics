@@ -1,291 +1,45 @@
-(function () {
-  const PROJECT_START_KEY = 'atom-project-started-at';
-  const BLOCKERS_KEY = 'atom-blockers';
-  const DAY_MS = 24 * 60 * 60 * 1000;
-  const COLORS = {
-    notStarted: '#dfe7e7',
-    low: '#f3c969',
-    medium: '#42d7c8',
-    high: '#149d91',
-    done: '#2ca66f',
-    blocker: '#d9534f'
-  };
-
-  const TASKS = [
-    { id: 1, name: 'Цели и KPI', start: 0, end: 7 },
-    { id: 2, name: 'Команды и владельцы', start: 0, end: 14 },
-    { id: 3, name: 'Источники лидов', start: 4, end: 18 },
-    { id: 4, name: 'Единая воронка', start: 10, end: 22 },
-    { id: 5, name: 'Data Dictionary', start: 15, end: 31 },
-    { id: 6, name: 'Сквозные ID', start: 22, end: 38 },
-    { id: 7, name: 'Интеграции', start: 31, end: 59 },
-    { id: 8, name: 'DWH и модель данных', start: 38, end: 66 },
-    { id: 9, name: 'Контроль качества', start: 52, end: 73 },
-    { id: 10, name: 'Единый BI-дашборд', start: 59, end: 80 },
-    { id: 11, name: 'Валидация с бизнесом', start: 73, end: 85 },
-    { id: 12, name: 'Приемка и закрытие', start: 84, end: 90 }
-  ];
-
-  function startTs() {
-    const raw = localStorage.getItem(PROJECT_START_KEY);
-    return raw ? Number(raw) : Date.now();
-  }
-
-  function toDateInput(ts) {
-    const d = new Date(ts);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  }
-
-  function endOfLocalDay(dateString) {
-    if (!dateString) return null;
-    const parts = dateString.split('-').map(Number);
-    if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
-    return new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999).getTime();
-  }
-
-  function dueKey(id) {
-    return `atom-gantt-due-${id}`;
-  }
-
-  function historyKey(id) {
-    return `atom-gantt-reschedule-history-${id}`;
-  }
-
-  function getHistory(id) {
-    try {
-      return JSON.parse(localStorage.getItem(historyKey(id)) || '[]');
-    } catch {
-      return [];
-    }
-  }
-
-  function effectiveDue(task, projectStart) {
-    const custom = localStorage.getItem(dueKey(task.id));
-    const customTs = endOfLocalDay(custom);
-    return customTs || addDays(projectStart, task.end);
-  }
-
-  function effectiveEndDay(task, projectStart) {
-    const due = effectiveDue(task, projectStart);
-    return Math.max(task.end, Math.ceil((due - projectStart) / DAY_MS));
-  }
-
-  function taskState(task, projectStart, now) {
-    const status = getStageStatus(task.id);
-    const percent = getStageProgress(task.id);
-    const due = effectiveDue(task, projectStart);
-    const start = addDays(projectStart, task.start);
-    const overdue = isStarted() && status !== 'Завершено' && now > due;
-    const customDue = localStorage.getItem(dueKey(task.id));
-    return { ...task, status, percent, due, startDate: start, overdue, customDue, history: getHistory(task.id) };
-  }
-
-  function readinessColor(state) {
-    if (!isStarted()) return COLORS.notStarted;
-    if (state.overdue || state.status === 'Блокер') return COLORS.blocker;
-    if (state.percent >= 100) return COLORS.done;
-    if (state.percent >= 75) return COLORS.high;
-    if (state.percent >= 40) return COLORS.medium;
-    if (state.percent > 0) return COLORS.low;
-    return COLORS.notStarted;
-  }
-
-  function legendItem(color, text) {
-    return `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;margin-bottom:6px"><span style="width:12px;height:12px;border-radius:3px;background:${color};display:inline-block"></span>${text}</span>`;
-  }
-
-  function getBlockers() {
-    try {
-      return JSON.parse(localStorage.getItem(BLOCKERS_KEY) || '[]');
-    } catch {
-      return [];
-    }
-  }
-
-  function saveBlockers(items) {
-    localStorage.setItem(BLOCKERS_KEY, JSON.stringify(items));
-  }
-
-  function ensureOverdueBlocker(state) {
-    if (!state.overdue) return;
-    const source = `Гант: ${state.name}`;
-    const blockers = getBlockers();
-    const existing = blockers.find(x => x.autoKey === source && !['Решен', 'Закрыт'].includes(x.status));
-    if (existing) return;
-    blockers.push({
-      id: Date.now() + state.id,
-      autoKey: source,
-      source,
-      description: `Просрочен срок этапа. Плановый срок: ${formatDate(state.due)}`,
-      severity: 'Высокая',
-      owner: 'Не назначен',
-      due: '',
-      status: 'Открыт',
-      comment: 'Создан автоматически по просрочке диаграммы Ганта',
-      createdAt: new Date().toISOString()
-    });
-    saveBlockers(blockers);
-  }
-
-  function appendRescheduleToBlocker(task, oldDue, newDue, reason) {
-    const source = `Гант: ${task.name}`;
-    const blockers = getBlockers();
-    let blocker = blockers.find(x => x.autoKey === source && !['Закрыт'].includes(x.status));
-    if (!blocker) {
-      blocker = {
-        id: Date.now() + task.id,
-        autoKey: source,
-        source,
-        description: `Перенос срока этапа после просрочки. Старый срок: ${formatDate(oldDue)}`,
-        severity: 'Высокая',
-        owner: 'Не назначен',
-        due: '',
-        status: 'Открыт',
-        comment: '',
-        createdAt: new Date().toISOString()
-      };
-      blockers.push(blocker);
-    }
-    const line = `Срок перенесен: ${formatDate(oldDue)} -> ${formatDate(newDue)}${reason ? `. Причина: ${reason}` : ''}`;
-    blocker.comment = blocker.comment ? `${blocker.comment}\n${line}` : line;
-    saveBlockers(blockers);
-  }
-
-  function saveReschedule(id, newDate, reason) {
-    const task = TASKS.find(x => x.id === id);
-    if (!task || !newDate) return;
-    const projectStart = startTs();
-    const oldDue = effectiveDue(task, projectStart);
-    const newDue = endOfLocalDay(newDate);
-    if (!newDue || newDue <= Date.now()) {
-      alert('Укажи новый срок позднее текущей даты');
-      return;
-    }
-
-    const history = getHistory(id);
-    history.push({
-      changedAt: new Date().toISOString(),
-      oldDue: toDateInput(oldDue),
-      newDue: newDate,
-      reason: reason || ''
-    });
-    localStorage.setItem(historyKey(id), JSON.stringify(history));
-    localStorage.setItem(dueKey(id), newDate);
-    appendRescheduleToBlocker(task, oldDue, newDue, reason || 'не указана');
-    render('gantt');
-  }
-
-  function renderRescheduleForm(state) {
-    const min = toDateInput(Date.now() + DAY_MS);
-    return `<div class="gantt-reschedule-form" data-reschedule-form="${state.id}" style="display:none;margin-top:8px;padding:10px;border:1px solid #dbe5e5;border-radius:8px;background:#f8fbfb">
-      <div style="display:grid;grid-template-columns:150px minmax(180px,1fr) auto;gap:8px;align-items:center">
-        <input type="date" class="gantt-new-due" data-id="${state.id}" min="${min}" value="${state.customDue || ''}">
-        <input type="text" class="gantt-reschedule-reason" data-id="${state.id}" placeholder="Причина переноса">
-        <button class="btn primary gantt-save-due" data-id="${state.id}">Сохранить</button>
-      </div>
-    </div>`;
-  }
-
-  function lastTransferText(state) {
-    if (!state.history.length) return '';
-    const last = state.history[state.history.length - 1];
-    const oldTs = endOfLocalDay(last.oldDue);
-    const newTs = endOfLocalDay(last.newDue);
-    return `<small style="color:#946a00">Срок перенесен: ${formatDate(oldTs)} -> ${formatDate(newTs)}</small>`;
-  }
-
-  window.ATOM_GANTT = {
-    tasks: TASKS,
-    getTaskState: function (id) {
-      const task = TASKS.find(x => x.id === Number(id));
-      if (!task) return null;
-      return taskState(task, startTs(), Date.now());
-    },
-    getAllStates: function () {
-      const ps = startTs();
-      const now = Date.now();
-      return TASKS.map(task => taskState(task, ps, now));
-    },
-    projectStart: startTs
-  };
-
-  window.gantt = function () {
-    const plannedStart = startTs();
-    const now = Date.now();
-    const states = TASKS.map(task => taskState(task, plannedStart, now));
-    states.forEach(ensureOverdueBlocker);
-
-    const maxEndDay = Math.max(90, ...TASKS.map(task => effectiveEndDay(task, plannedStart)));
-    const horizonDays = Math.ceil(maxEndDay / 7) * 7;
-    const weeks = Math.ceil(horizonDays / 7);
-    const weekHeaders = Array.from({ length: weeks }, (_, i) => `<div class="gantt-week">Н${i + 1}</div>`).join('');
-    const gridStep = 100 / weeks;
-
-    const rows = states.map(state => {
-      const endDay = effectiveEndDay(state, plannedStart);
-      const color = readinessColor(state);
-      const left = state.start / horizonDays * 100;
-      const width = Math.max(2, (endDay - state.start) / horizonDays * 100);
-      const dueText = formatDate(state.due);
-      const statusText = state.overdue ? 'Просрочка / Блокер' : state.status;
-      const transferButton = state.overdue || state.customDue
-        ? `<button class="btn gantt-reschedule-btn" data-id="${state.id}" style="margin-top:6px;padding:5px 8px;font-size:11px">${state.customDue ? 'Изменить срок' : 'Перенести срок'}</button>`
-        : '';
-      const overdueNote = state.overdue ? `<small style="color:#a53636;font-weight:700">Просрочено. Актуальный срок: ${dueText}</small>` : '';
-
-      return `<div class="gantt-row">
-        <div class="gantt-task">
-          <b>${state.name}</b>
-          <small>${formatDate(state.startDate)} - ${dueText}</small>
-          <small><b>${state.percent}%</b> · ${statusText}</small>
-          ${overdueNote}
-          ${lastTransferText(state)}
-          ${transferButton}
-          ${renderRescheduleForm(state)}
-        </div>
-        <div class="gantt-track">
-          <div class="gantt-grid" style="background:repeating-linear-gradient(to right,transparent 0,transparent calc(${gridStep}% - 1px),var(--line) calc(${gridStep}% - 1px),var(--line) ${gridStep}%)"></div>
-          <div class="gantt-bar" title="${state.name}: ${state.percent}% · ${statusText}" style="left:${left}%;width:${width}%;background:${color}"></div>
-        </div>
-      </div>`;
-    }).join('');
-
-    const legend = `<div style="margin:14px 0 18px;padding:12px 14px;background:#fff;border:1px solid #dbe5e5;border-radius:10px;font-size:12px">
-      ${legendItem(COLORS.notStarted, '0% Не начато')}
-      ${legendItem(COLORS.low, '1-39% Начало')}
-      ${legendItem(COLORS.medium, '40-74% В работе')}
-      ${legendItem(COLORS.high, '75-99% Близко к завершению')}
-      ${legendItem(COLORS.done, '100% Готово')}
-      ${legendItem(COLORS.blocker, 'Блокер / просрочка')}
-    </div>`;
-
-    return `<div class="section-title"><h2>Диаграмма Ганта</h2><small>Просрочка автоматически становится блокером</small></div>
-      <div class="callout"><b>${isStarted() ? 'Гант рассчитан от фактической даты старта проекта.' : 'Проект еще не запущен.'}</b> ${isStarted() ? 'Если срок этапа прошел, а этап не завершен, он отображается красным и фиксируется в блокерах. Срок можно перенести.' : 'До старта все этапы отображаются нейтральным цветом.'}</div>
-      ${legend}
-      <div class="gantt-wrap">
-        <div class="gantt-head"><div class="gantt-task-head">Этап</div><div class="gantt-weeks" style="grid-template-columns:repeat(${weeks},1fr)">${weekHeaders}</div></div>
-        ${rows}
-      </div>
-      <div class="gantt-footer"><span>Старт: <b>${formatDate(plannedStart)}</b></span><span>Плановое завершение проекта: <b>${formatDate(addDays(plannedStart, 90))}</b></span><span>Базовый срок: <b>3 месяца / 90 дней</b></span></div>`;
-  };
-
-  document.addEventListener('click', event => {
-    const toggle = event.target.closest('.gantt-reschedule-btn');
-    if (toggle) {
-      const form = document.querySelector(`[data-reschedule-form="${toggle.dataset.id}"]`);
-      if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
-      return;
-    }
-
-    const save = event.target.closest('.gantt-save-due');
-    if (save) {
-      const id = Number(save.dataset.id);
-      const date = document.querySelector(`.gantt-new-due[data-id="${id}"]`)?.value || '';
-      const reason = document.querySelector(`.gantt-reschedule-reason[data-id="${id}"]`)?.value.trim() || '';
-      saveReschedule(id, date, reason);
-    }
-  });
+(function(){
+const START_KEY='atom-project-started-at',BLOCKERS_KEY='atom-blockers',DAY=86400000;
+const C={notStarted:'#dfe7e7',low:'#f3c969',medium:'#42d7c8',high:'#149d91',done:'#2ca66f',blocker:'#d9534f',extended:'#d99000'};
+let activeFilter='all',scaleMode='weeks';
+const TASKS=[
+{id:1,name:'Цели и KPI',start:0,end:7},{id:2,name:'Команды и владельцы',start:0,end:14},{id:3,name:'Источники лидов',start:7,end:21},{id:4,name:'Единая воронка',start:14,end:28},{id:5,name:'Data Dictionary',start:21,end:35},{id:6,name:'Сквозные ID',start:28,end:42},{id:7,name:'Интеграции',start:35,end:63},{id:8,name:'DWH и модель данных',start:42,end:70},{id:9,name:'Контроль качества',start:56,end:77},{id:10,name:'Единый BI-дашборд',start:63,end:84},{id:11,name:'Валидация с бизнесом',start:77,end:91},{id:12,name:'Приемка и закрытие',start:84,end:91}
+];
+function styles(){if(document.getElementById('gantt-focus-styles'))return;const s=document.createElement('style');s.id='gantt-focus-styles';s.textContent=`
+.content.gantt-content-focus{max-width:none;padding-right:18px}.gantt-dashboard{width:100%}.gantt-title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:4px 0 12px}.gantt-title-row h2{margin:0;font-size:22px}.gantt-title-row small{color:var(--muted)}.gantt-info{display:flex;align-items:center;gap:9px;padding:10px 12px;border-left:4px solid var(--accent);background:#eefcfa;border-radius:8px;font-size:12px;margin-bottom:12px}.gantt-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}.gantt-kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px}.gantt-kpi span{font-size:11px;color:var(--muted)}.gantt-kpi b{font-size:22px}.gantt-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:10px}.gantt-filter-group,.gantt-scale-group{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.gantt-toolbar-label{font-size:10px;color:var(--muted);margin-right:3px;text-transform:uppercase;letter-spacing:.45px;font-weight:700}.gantt-tool-btn{border:1px solid transparent;background:#f3f7f7;color:#53696a;border-radius:7px;padding:6px 9px;font:inherit;font-size:11px;cursor:pointer}.gantt-tool-btn.active{background:#dff9f5;color:#0f6962;border-color:#9edfd7;font-weight:700}.gantt-legend{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:7px 2px 10px;font-size:10px;color:#53696a}.gantt-legend-item{display:inline-flex;align-items:center;gap:5px}.gantt-legend-dot{width:9px;height:9px;border-radius:3px;display:inline-block}.gantt-wrap.gantt-focus-wrap{max-height:calc(100vh - 315px);min-height:390px;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:auto;box-shadow:0 4px 14px rgba(20,45,46,.05)}.gantt-focus-wrap .gantt-head,.gantt-focus-wrap .gantt-row{display:grid;grid-template-columns:330px minmax(900px,1fr);min-width:1230px}.gantt-focus-wrap .gantt-head{position:sticky;top:0;z-index:20;background:#edf3f3;border-bottom:1px solid #cfdada;min-height:51px}.gantt-meta-head{position:sticky;left:0;z-index:23;background:#edf3f3;display:grid;grid-template-columns:170px 95px 65px;border-right:1px solid #cfdada}.gantt-meta-head>div{display:flex;align-items:center;padding:9px 8px;border-right:1px solid #d7e1e1;font-size:9px;color:#53696a;font-weight:700}.gantt-meta-head>div:last-child{border-right:0}.gantt-timeline-head{position:relative;display:flex;min-width:900px}.gantt-time-segment{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-right:1px solid #d6e0e0;font-size:10px;font-weight:700;color:#455e5f}.gantt-time-segment small{font-size:8px;color:#7b8d8e;font-weight:400;white-space:nowrap}.gantt-focus-wrap .gantt-row{position:relative;min-height:62px;border-bottom:1px solid #e2e9e9}.gantt-focus-wrap .gantt-row:nth-child(odd){background:#fbfdfd}.gantt-meta{position:sticky;left:0;z-index:8;display:grid;grid-template-columns:170px 95px 65px;background:inherit;border-right:1px solid #d5dfdf}.gantt-cell{display:flex;flex-direction:column;justify-content:center;gap:3px;padding:8px;border-right:1px solid #e0e7e7;min-width:0;font-size:10px;line-height:1.25}.gantt-cell:last-child{border-right:0}.gantt-name-cell b{font-size:11px}.gantt-status-badge{display:inline-flex;width:max-content;max-width:100%;padding:3px 6px;border-radius:999px;font-size:9px;font-weight:700}.gantt-status-badge.notstarted{background:#edf2f2;color:#66797a}.gantt-status-badge.work{background:#e3faf7;color:#0f6962}.gantt-status-badge.done{background:#e5f7ef;color:#227457}.gantt-status-badge.problem{background:#fdeaea;color:#a53636}.gantt-mini-progress{height:4px;border-radius:99px;background:#e4ecec;overflow:hidden}.gantt-mini-progress>span{display:block;height:100%;background:var(--accent-dark)}.gantt-details-btn{border:1px solid #b7caca;background:#fff;color:#0f6962;border-radius:6px;padding:5px 6px;font:inherit;font-size:9px;cursor:pointer;font-weight:700}.gantt-details-btn:hover{background:#eefcfa}.gantt-track{position:relative;min-height:62px;overflow:hidden;min-width:900px}.gantt-grid-line{position:absolute;top:0;bottom:0;width:1px;background:#dfe6e6}.gantt-bar{position:absolute;top:16px;height:30px;border-radius:7px;box-shadow:0 2px 5px rgba(15,105,98,.12);display:flex;align-items:center;overflow:hidden}.gantt-bar-label{padding-left:7px;font-size:9px;font-weight:700;white-space:nowrap;color:#173233}.gantt-bar-label.light{color:#fff}.gantt-extension{position:absolute;top:16px;height:30px;background:repeating-linear-gradient(135deg,#d99000 0,#d99000 6px,#ffe5a8 6px,#ffe5a8 12px);border:1px solid #b67a00;border-radius:0 7px 7px 0}.gantt-today-line,.gantt-today-head{position:absolute;top:0;bottom:0;width:2px;background:#d95c5c;z-index:7}.gantt-today-head span{position:absolute;top:3px;left:5px;background:#fff1f1;color:#a53636;border:1px solid #efc3c3;border-radius:5px;padding:2px 4px;font-size:8px;font-weight:700;white-space:nowrap}.gantt-detail-panel{grid-column:1/-1;display:none;background:#f8fbfb;border-top:1px solid #dbe5e5;padding:11px 12px;z-index:25}.gantt-detail-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}.gantt-detail-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 10px;min-width:0}.gantt-detail-card .label{display:block;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.35px;margin-bottom:5px;font-weight:700}.gantt-detail-card b{font-size:12px}.gantt-detail-sub{font-size:9px;color:#728586;margin-top:3px}.gantt-change-label{font-size:9px;color:#738687}.gantt-change-label.extended{color:#946a00;font-weight:700}.gantt-change-label.shortened{color:#526667;font-weight:700}.gantt-action-box{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}.gantt-action-box .btn{padding:6px 9px;font-size:10px}.gantt-action-note{font-size:9px;color:#8a9696}.gantt-reschedule-form{display:none;margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px}.gantt-reschedule-grid{display:grid;grid-template-columns:150px minmax(220px,1fr) auto auto;gap:8px;align-items:center}.gantt-reschedule-grid input{padding:8px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:11px}.gantt-empty{grid-column:1/-1;padding:28px;text-align:center;color:var(--muted)}.gantt-footer-focus{display:flex;gap:18px;flex-wrap:wrap;margin-top:9px;padding:8px 10px;background:#fff;border:1px solid var(--line);border-radius:9px;font-size:10px;color:var(--muted)}.gantt-footer-focus b{color:var(--text)}@media(max-width:900px){.gantt-kpis{grid-template-columns:repeat(2,1fr)}.gantt-wrap.gantt-focus-wrap{max-height:none}.gantt-detail-grid{grid-template-columns:1fr}}
+`;document.head.appendChild(s)}
+function sod(ts){const d=new Date(ts);return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()}
+function addDays(ts,n){const d=new Date(sod(ts));d.setDate(d.getDate()+n);return d.getTime()}
+function diffDays(a,b){return Math.round((sod(b)-sod(a))/DAY)}
+function startTs(){const r=localStorage.getItem(START_KEY);return r?Number(r):Date.now()}
+function inp(ts){const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function eod(v){if(!v)return null;const p=v.split('-').map(Number);return new Date(p[0],p[1]-1,p[2],23,59,59,999).getTime()}
+function short(ts){return new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit'}).format(new Date(ts))}
+function month(ts){const x=new Intl.DateTimeFormat('ru-RU',{month:'long'}).format(new Date(ts));return x[0].toUpperCase()+x.slice(1)}
+function originalDue(t,ps){return eod(inp(addDays(ps,t.end)))}
+function dueKey(id){return `atom-gantt-due-${id}`}
+function histKey(id){return `atom-gantt-reschedule-history-${id}`}
+function history(id){try{return JSON.parse(localStorage.getItem(histKey(id))||'[]')}catch{return[]}}
+function due(t,ps){return eod(localStorage.getItem(dueKey(t.id)))||originalDue(t,ps)}
+function endDay(t,ps){return Math.max(t.start+7,diffDays(ps,due(t,ps)))}
+function state(t,ps,now){const status=getStageStatus(t.id),percent=getStageProgress(t.id),d=due(t,ps),base=originalDue(t,ps),custom=localStorage.getItem(dueKey(t.id));return {...t,status,percent,due:d,originalDue:base,startDate:addDays(ps,t.start),overdue:isStarted()&&status!=='Завершено'&&now>d,customDue:custom,changed:Boolean(custom),extended:Boolean(custom)&&d>base,shortened:Boolean(custom)&&d<base,deltaDays:custom?diffDays(base,d):0,history:history(t.id)}}
+function group(s){if(s.overdue||s.status==='Блокер')return'problem';if(s.percent>=100||s.status==='Завершено')return'done';if(s.percent>0)return'work';return'notstarted'}
+function color(s){const g=group(s);if(g==='problem')return C.blocker;if(g==='done')return C.done;if(s.percent>=75)return C.high;if(s.percent>=40)return C.medium;if(s.percent>0)return C.low;return C.notStarted}
+function blockers(){try{return JSON.parse(localStorage.getItem(BLOCKERS_KEY)||'[]')}catch{return[]}}
+function saveBlockers(x){localStorage.setItem(BLOCKERS_KEY,JSON.stringify(x))}
+function ensureOverdue(s){if(!s.overdue)return;const src=`Гант: ${s.name}`,b=blockers();if(b.some(x=>x.autoKey===src&&!['Решен','Закрыт'].includes(x.status)))return;b.push({id:Date.now()+s.id,autoKey:src,source:src,description:`Просрочен срок этапа. Актуальный срок: ${formatDate(s.due)}. Базовый срок: ${formatDate(s.originalDue)}`,severity:'Высокая',owner:'Не назначен',due:'',status:'Открыт',comment:'Создан автоматически по просрочке диаграммы Ганта',createdAt:new Date().toISOString()});saveBlockers(b)}
+function appendToBlocker(t,oldDue,newDue,reason){const src=`Гант: ${t.name}`,b=blockers(),x=b.find(v=>v.autoKey===src&&v.status!=='Закрыт');if(!x)return;x.comment=(x.comment?x.comment+'\n':'')+`Срок изменен: ${formatDate(oldDue)} -> ${formatDate(newDue)}${reason?`. Причина: ${reason}`:''}`;saveBlockers(b)}
+function saveDue(id,newDate,reason){const t=TASKS.find(x=>x.id===id);if(!t||!newDate)return;if(!isStarted())return alert('Сроки можно менять после старта проекта');const ps=startTs(),old=due(t,ps),base=originalDue(t,ps),nd=eod(newDate),offset=diffDays(ps,nd);if(nd<addDays(ps,t.start))return alert('Срок не может быть раньше начала этапа');if(offset%7!==0)return alert('Выбери дату на границе проектной недели. Шаг изменения срока: 7 дней');if(nd>base&&!reason.trim())return alert('Для продления срока укажи причину');const h=history(id);h.push({changedAt:new Date().toISOString(),oldDue:inp(old),newDue:newDate,originalDue:inp(base),type:nd>base?'extended':nd<base?'shortened':'baseline',reason:reason||''});localStorage.setItem(histKey(id),JSON.stringify(h));localStorage.setItem(dueKey(id),newDate);appendToBlocker(t,old,nd,reason||'не указана');render('gantt')}
+function resetDue(id){const t=TASKS.find(x=>x.id===id);if(!t||!isStarted())return;const ps=startTs(),old=due(t,ps),base=originalDue(t,ps),h=history(id);h.push({changedAt:new Date().toISOString(),oldDue:inp(old),newDue:inp(base),originalDue:inp(base),type:'reset',reason:'Возврат к базовому сроку'});localStorage.setItem(histKey(id),JSON.stringify(h));localStorage.removeItem(dueKey(id));appendToBlocker(t,old,base,'Возврат к базовому сроку');render('gantt')}
+function form(s){return `<div class="gantt-reschedule-form" data-reschedule-form="${s.id}"><div class="gantt-reschedule-grid"><input type="date" step="7" class="gantt-new-due" data-id="${s.id}" min="${inp(s.startDate)}" value="${s.customDue||inp(s.originalDue)}"><input type="text" class="gantt-reschedule-reason" data-id="${s.id}" placeholder="Причина изменения срока"><button class="btn primary gantt-save-due" data-id="${s.id}">Сохранить</button>${s.changed?`<button class="btn gantt-reset-due" data-id="${s.id}">Вернуть базовый</button>`:'<span></span>'}</div></div>`}
+function segments(ps,h){if(scaleMode==='months'){const a=[];let d=0;while(d<h){const dt=new Date(addDays(ps,d)),next=new Date(dt.getFullYear(),dt.getMonth()+1,1).getTime();let e=Math.min(h,diffDays(ps,next));if(e<=d)e=Math.min(h,d+7);a.push({start:d,end:e,label:month(dt),sub:`${short(addDays(ps,d))} - ${short(addDays(ps,e-1))}`});d=e}return a}const a=[];for(let d=0,n=1;d<h;d+=7,n++)a.push({start:d,end:Math.min(h,d+7),label:`Н${n}`,sub:`${short(addDays(ps,d))} - ${short(addDays(ps,Math.min(h,d+7)-1))}`});return a}
+function head(segs,h,today){return `<div class="gantt-timeline-head">${segs.map(x=>`<div class="gantt-time-segment" style="width:${(x.end-x.start)/h*100}%"><span>${x.label}</span><small>${x.sub}</small></div>`).join('')}${today!==null?`<div class="gantt-today-head" style="left:${today}%"><span>Сегодня</span></div>`:''}</div>`}
+function grid(segs,h){return segs.slice(1).map(x=>`<span class="gantt-grid-line" style="left:${x.start/h*100}%"></span>`).join('')}
+function badge(s){return `<span class="gantt-status-badge ${group(s)}">${s.overdue?'Просрочено':s.status}</span>`}
+function change(s){if(s.extended)return `<span class="gantt-change-label extended">Продлен +${Math.max(7,s.deltaDays)} дн.</span>`;if(s.shortened)return `<span class="gantt-change-label shortened">Раньше на ${Math.abs(s.deltaDays)} дн.</span>`;return `<span class="gantt-change-label">Без изменений</span>`}
+function details(s){const action=isStarted()?`<button class="btn gantt-reschedule-btn" data-id="${s.id}">Изменить срок</button>`:`<button class="btn gantt-reschedule-btn" data-id="${s.id}" disabled style="opacity:.45;cursor:not-allowed">Изменить срок</button><span class="gantt-action-note">Доступно после старта проекта</span>`;return `<div class="gantt-detail-panel" data-details-panel="${s.id}"><div class="gantt-detail-grid"><div class="gantt-detail-card"><span class="label">Период</span><b>${formatDate(s.startDate)} - ${formatDate(s.due)}</b><div class="gantt-detail-sub">Проектная недельная сетка</div></div><div class="gantt-detail-card"><span class="label">Базовый срок</span><b>${formatDate(s.originalDue)}</b><div class="gantt-detail-sub">${change(s)}</div></div><div class="gantt-detail-card"><span class="label">Действие</span><div class="gantt-action-box">${action}</div>${form(s)}</div></div></div>`}
+function row(s,ps,h,segs,today){const cur=endDay(s,ps),left=s.start/h*100,w=Math.max(.7,(cur-s.start)/h*100),ow=Math.max(.7,(s.end-s.start)/h*100),extLeft=s.end/h*100,extW=Math.max(0,(cur-s.end)/h*100),light=['done','problem'].includes(group(s))||s.percent>=75?'light':'';const bar=s.extended?`<div class="gantt-bar" style="left:${left}%;width:${ow}%;background:${color(s)}"><span class="gantt-bar-label ${light}">${s.percent}%</span></div><div class="gantt-extension" style="left:${extLeft}%;width:${extW}%"></div>`:`<div class="gantt-bar" style="left:${left}%;width:${w}%;background:${color(s)}"><span class="gantt-bar-label ${light}">${s.percent}%</span></div>`;return `<div class="gantt-row"><div class="gantt-meta"><div class="gantt-cell gantt-name-cell"><b>${s.name}</b></div><div class="gantt-cell"><b>${s.percent}%</b>${badge(s)}<div class="gantt-mini-progress"><span style="width:${s.percent}%"></span></div></div><div class="gantt-cell"><button class="gantt-details-btn" data-id="${s.id}" aria-expanded="false">Открыть</button></div></div><div class="gantt-track">${grid(segs,h)}${today!==null?`<div class="gantt-today-line" style="left:${today}%"></div>`:''}${bar}</div>${details(s)}</div>`}
+window.ATOM_GANTT={tasks:TASKS,getTaskState:id=>{const t=TASKS.find(x=>x.id===Number(id));return t?state(t,startTs(),Date.now()):null},getAllStates:()=>TASKS.map(t=>state(t,startTs(),Date.now())),projectStart:startTs};
+window.gantt=function(){styles();document.querySelector('.content')?.classList.add('gantt-content-focus');const ps=startTs(),now=Date.now(),states=TASKS.map(t=>state(t,ps,now));states.forEach(ensureOverdue);const max=Math.max(91,...states.map(s=>endDay(s,ps))),h=Math.max(91,Math.ceil(max/7)*7),segs=segments(ps,h),td=diffDays(ps,now),today=td>=0&&td<=h?td/h*100:null,counts={notstarted:0,work:0,problem:0,done:0};states.forEach(s=>counts[group(s)]++);const visible=activeFilter==='all'?states:states.filter(s=>group(s)===activeFilter);return `<div class="gantt-dashboard"><div class="gantt-title-row"><div><h2>Диаграмма Ганта</h2><small>Основной акцент на недельной временной шкале</small></div><small>${isStarted()?`Старт проекта: ${formatDate(ps)}`:'Проект еще не запущен'}</small></div><div class="gantt-info"><b>Компактный режим.</b><span>Период, базовый срок и действия свернуты. Нажми «Открыть» напротив этапа, чтобы увидеть детали.</span></div><div class="gantt-kpis"><div class="gantt-kpi"><span>Всего этапов</span><b>${states.length}</b></div><div class="gantt-kpi"><span>В работе</span><b>${counts.work}</b></div><div class="gantt-kpi"><span>Просрочено / блокер</span><b>${counts.problem}</b></div><div class="gantt-kpi"><span>Завершено</span><b>${counts.done}</b></div></div><div class="gantt-toolbar"><div class="gantt-filter-group"><span class="gantt-toolbar-label">Показать</span>${[['all','Все',states.length],['work','В работе',counts.work],['problem','Проблемные',counts.problem],['done','Завершено',counts.done],['notstarted','Не начато',counts.notstarted]].map(x=>`<button class="gantt-tool-btn gantt-filter-btn ${activeFilter===x[0]?'active':''}" data-filter="${x[0]}">${x[1]} ${x[2]}</button>`).join('')}</div><div class="gantt-scale-group"><span class="gantt-toolbar-label">Масштаб</span><button class="gantt-tool-btn gantt-scale-btn ${scaleMode==='weeks'?'active':''}" data-scale="weeks">Недели</button><button class="gantt-tool-btn gantt-scale-btn ${scaleMode==='months'?'active':''}" data-scale="months">Месяцы</button></div></div><div class="gantt-legend"><span class="gantt-legend-item"><i class="gantt-legend-dot" style="background:${C.notStarted}"></i>Не начато</span><span class="gantt-legend-item"><i class="gantt-legend-dot" style="background:${C.medium}"></i>В работе</span><span class="gantt-legend-item"><i class="gantt-legend-dot" style="background:${C.done}"></i>Готово</span><span class="gantt-legend-item"><i class="gantt-legend-dot" style="background:${C.blocker}"></i>Блокер / просрочка</span><span class="gantt-legend-item"><i class="gantt-legend-dot" style="background:repeating-linear-gradient(135deg,#d99000 0,#d99000 4px,#ffe5a8 4px,#ffe5a8 8px)"></i>Продление</span></div><div class="gantt-wrap gantt-focus-wrap"><div class="gantt-head"><div class="gantt-meta-head"><div>Этап</div><div>Статус</div><div>Детали</div></div>${head(segs,h,today)}</div>${visible.length?visible.map(s=>row(s,ps,h,segs,today)).join(''):'<div class="gantt-empty">По выбранному фильтру этапов нет.</div>'}</div><div class="gantt-footer-focus"><span>Старт: <b>${formatDate(ps)}</b></span><span>Базовое завершение: <b>${formatDate(addDays(ps,91))}</b></span><span>Горизонт: <b>13 недель / 91 день</b></span><span>Показано: <b>${visible.length} из ${states.length}</b></span></div></div>`};
+document.addEventListener('click',e=>{const nav=e.target.closest('.nav');if(nav&&nav.dataset.view!=='gantt')document.querySelector('.content')?.classList.remove('gantt-content-focus');const f=e.target.closest('.gantt-filter-btn');if(f){activeFilter=f.dataset.filter||'all';render('gantt');return}const sc=e.target.closest('.gantt-scale-btn');if(sc){scaleMode=sc.dataset.scale==='months'?'months':'weeks';render('gantt');return}const db=e.target.closest('.gantt-details-btn');if(db){const p=document.querySelector(`[data-details-panel="${db.dataset.id}"]`),open=p&&p.style.display==='block';if(p)p.style.display=open?'none':'block';db.textContent=open?'Открыть':'Свернуть';db.setAttribute('aria-expanded',String(!open));return}const t=e.target.closest('.gantt-reschedule-btn');if(t){if(t.disabled)return;const form=document.querySelector(`[data-reschedule-form="${t.dataset.id}"]`);if(form)form.style.display=form.style.display==='block'?'none':'block';return}const sv=e.target.closest('.gantt-save-due');if(sv){const id=Number(sv.dataset.id),date=document.querySelector(`.gantt-new-due[data-id="${id}"]`)?.value||'',reason=document.querySelector(`.gantt-reschedule-reason[data-id="${id}"]`)?.value.trim()||'';saveDue(id,date,reason);return}const r=e.target.closest('.gantt-reset-due');if(r)resetDue(Number(r.dataset.id))});
 })();

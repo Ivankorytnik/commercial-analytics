@@ -24,7 +24,7 @@ const getBlockers=()=>{try{return JSON.parse(localStorage.getItem(BLOCKERS_KEY)|
 const saveBlockers=x=>localStorage.setItem(BLOCKERS_KEY,JSON.stringify(x));
 const activeBlockers=()=>getBlockers().filter(x=>!['Решен','Закрыт'].includes(x.status));
 const criticalBlockers=()=>activeBlockers().filter(x=>x.severity==='Критическая').length;
-const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[m]));
 
 function updateHeaderProgress(){const p=Math.max(0,Math.min(100,getProjectProgress()));const l=document.getElementById('header-progress'),b=document.getElementById('header-progress-bar');if(l)l.textContent=`${p}%`;if(b)b.style.width=`${p}%`;}
 function render(view){const views={overview,gantt,roadmap,teams,sources,funnel,dictionary,issues,dod};app.innerHTML=views[view]();bindChecks();bindStart();bindResponsibles();bindStageStatuses();bindSourceStatuses();bindDictionaryReady();bindBlockers();updateProjectClock();updateHeaderProgress();}

@@ -6,19 +6,29 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>АТОМ | Контроль готовности проекта коммерческой аналитики</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=0.7.1" />
-  <link rel="stylesheet" href="styles.css?v=0.7.1" />
+  <title>АТОМ | Управление внедрением коммерческой аналитики</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=test-2" />
+  <link rel="stylesheet" href="styles.css?v=0.7.2-sync" />
+  <style>
+    .nav-info-separator{margin:18px 8px 8px;padding:14px 6px 0;border-top:1px solid #dbe5e5;color:#8a9b9c;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+    .nav-info-separator~.nav{background:#f7f9f9;color:#5b7071;border-left:2px solid transparent;font-size:13px}
+    .nav-info-separator~.nav:hover,.nav-info-separator~.nav.active{background:#eef5f4;color:#294343;border-left-color:#35d8c7;font-weight:700}
+    .header-status{flex-direction:row;align-items:center;justify-content:flex-end;gap:10px;min-width:0;flex-wrap:nowrap}
+    .project-progress-box{width:220px;flex:0 0 220px;padding:10px 12px}
+    .status-pill{white-space:nowrap;flex:0 0 auto}
+    @media(max-width:1100px){.topbar{flex-direction:column}.header-status{width:100%;justify-content:flex-start;flex-wrap:wrap}.project-progress-box{width:220px}}
+    @media(max-width:600px){.header-status{align-items:flex-start}.project-progress-box{width:100%;flex-basis:100%}}
+  </style>
 </head>
 <body>
   <header class="topbar">
     <div>
       <div class="eyebrow">АТОМ · Commercial Analytics</div>
-      <h1>Контроль готовности проекта коммерческой аналитики</h1>
-      <p>Контрольный центр проекта до запуска единого сквозного дашборда</p>
+      <h1>Управление внедрением коммерческой аналитики АТОМ</h1>
+      <p>Единый центр управления внедрением от источника лида до BI-дашборда</p>
       <div class="build-meta">
-        <span>Версия <b>v0.7.1</b></span>
-        <span>Обновлено <b>10.09.2026 · 15:08</b></span>
+        <span>Версия <b>v1.4.0 WEEKLY REPORT</b></span>
+        <span>Обновлено <b>10.09.2026 · 21:53</b></span>
       </div>
     </div>
     <div class="header-status">
@@ -27,7 +37,7 @@
         <strong id="header-progress">0%</strong>
         <div class="header-progress-track"><div id="header-progress-bar"></div></div>
       </div>
-      <div class="status-pill">MVP · DEMO DATA ONLY</div>
+      <div class="status-pill">TEST · CLOUD SYNC</div>
     </div>
   </header>
 
@@ -35,22 +45,42 @@
     <aside class="sidebar">
       <button class="nav active" data-view="overview">Обзор</button>
       <button class="nav" data-view="gantt">Диаграмма Ганта</button>
-      <button class="nav" data-view="roadmap">Этапы проекта</button>
-      <button class="nav" data-view="teams">Команды и RACI</button>
-      <button class="nav" data-view="sources">Источники данных</button>
-      <button class="nav" data-view="funnel">Сквозной путь</button>
-      <button class="nav" data-view="dictionary">Data Dictionary</button>
       <button class="nav" data-view="issues">Блокеры</button>
       <button class="nav" data-view="dod">Definition of Done</button>
+      <div class="nav-info-separator">Информация</div>
+      <button class="nav" data-view="funnel">Сквозной путь</button>
     </aside>
 
-    <section class="content"><div id="app"></div></section>
+    <section class="content"><div id="app"><div class="callout">Загрузка общих данных...</div></div></section>
   </main>
 
-  <footer>В MVP используются только синтетические и проектные данные. Реальные данные АТОМ не загружаются.</footer>
-  <script src="app.js?v=0.7.1"></script>
-  <script src="gantt-readiness.js?v=0.7.1"></script>
-  <script src="project-countdown.js?v=0.7.1"></script>
-  <script src="overview-summary.js?v=0.7.1"></script>
+  <footer>Тестовая версия. Данные проекта синхронизируются между устройствами через облачное хранилище.</footer>
+  <script src="sync-status.js?v=1.2.1"></script>
+  <script src="sync-storage.js?v=2.1.0"></script>
+  <script>
+    (function(){
+      let started=false;
+      function loadApp(){
+        if(started)return;started=true;
+        [
+          'app.js?v=0.7.2-sync',
+          'reference-bootstrap.js?v=1.3.1',
+          'gantt-readiness.js?v=0.8.3-sync',
+          'gantt-compact-status.js?v=0.9.0-sync',
+          'logic-core.js?v=1.2.0',
+          'project-countdown.js?v=1.0.0',
+          'faq.js?v=0.7.4-sync',
+          'weekly-report.js?v=1.4.0',
+          'security.js?v=0.8.7-sync',
+          'logic-core-ui-fast.js?v=1.2.1',
+          'project-admin.js?v=1.3.0',
+          'person-team-role.js?v=1.0.0',
+          'management-navigation.js?v=1.3.1'
+        ].forEach(src=>{const s=document.createElement('script');s.src=src;s.async=false;document.body.appendChild(s);});
+      }
+      window.addEventListener('atom-sync-ready',loadApp,{once:true});
+      setTimeout(loadApp,4000);
+    })();
+  </script>
 </body>
 </html>
