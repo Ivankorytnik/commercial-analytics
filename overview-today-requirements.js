@@ -1,14 +1,11 @@
 (function(){
-  const VERSION='2.0.0';
+  const VERSION='2.1.0';
   let queued=false;
   let lastSig='';
 
   const core=()=>window.ATOM_CORE;
-  const activity=()=>window.ATOM_TEAM_ACTIVITY;
-  const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[m]));
   const pad=n=>String(n).padStart(2,'0');
-  const excluded=id=>localStorage.getItem(`atom-requirement-not-actual-${id}`)==='1';
-  const activeTeam=team=>activity()?.isActive?activity().isActive(team):true;
 
   function fmtDateTime(value,withTime=true){
     if(value===null||value===undefined||value==='')return'Не задано';
@@ -69,13 +66,14 @@
     const seen=new Set(),out=[];
     (c.teams?.()||[]).forEach(team=>{
       (c.requirementsByTeam?.(team)||[]).forEach(req=>{
-        if(seen.has(req.id)||excluded(req.id)||!activeTeam(req.team))return;
+        if(seen.has(req.id))return;
         seen.add(req.id);
+        // Удаленные требования никогда не показываем. Все остальные фильтруются только по периоду.
+        if(c.isRequirementDeleted?.(req.id))return;
         const state=c.getState(req.id);
-        if(state.statusId==='done')return;
         const p=c.periodForRequirement(req),b=bounds(p);
-        // "Сегодня в работе" = требование, период которого пересекает сегодняшний день.
-        // Будущие требования и уже завершившиеся до начала сегодняшнего дня сюда не попадают.
+        // "Сегодня в работе" = любое требование, период которого пересекает сегодняшний календарный день.
+        // Статус, актуальность и активность команды не должны скрывать пункт, если дата попадает в период.
         const activeToday=b.start<=dayEnd&&b.end>=dayStart;
         if(!activeToday)return;
         const owner=c.personName(state.respondentId)||c.teamOwner(req.team)||'Не назначен';
@@ -131,7 +129,7 @@
     const hasRequirementsMarkup=Boolean(host.querySelector('.today-req-table,.today-req-empty'));
     if(sig===lastSig&&host.dataset.todaySource==='requirements'&&hasRequirementsMarkup)return;
     lastSig=sig;host.dataset.todaySource='requirements';
-    host.innerHTML=`<div class="today-req-head"><div><h3>Сегодня в работе</h3><small>Источник: Управление проектом → Требования · показываются требования, период которых пересекает сегодняшний день</small></div><small>${list.length} поз.</small></div>${list.length?`<div class="today-req-wrap"><table class="today-req-table"><thead><tr><th>Команда</th><th style="min-width:250px">Что нужно</th><th>Этап Ганта</th><th>Период</th><th>Дата закрытия</th><th>До закрытия</th><th>Статус</th><th>Ответственный за ответ</th><th>Комментарий</th></tr></thead><tbody>${list.map(x=>`<tr data-today-team="${esc(x.req.team)}"><td class="today-req-team">${esc(x.req.team)}</td><td>${esc(x.req.text)}</td><td class="today-req-stage">${x.req.stageId}. ${esc(core().stageName(x.req.stageId))}</td><td class="today-req-period">${esc(periodText(x))}${x.p?.customTimes?'<br><span style="font-size:8px;color:var(--muted)">индивидуальный срок</span>':''}</td><td class="today-req-close">${esc(closingText(x))}</td><td class="today-req-remaining">${esc(remaining(x.b.end,x.state))}</td><td><span class="today-status ${statusClass(x.state,x.status)}">${esc(x.status)}</span></td><td class="today-req-owner">${esc(x.owner)}</td><td class="today-req-comment">${esc(x.comment||'')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="today-req-empty">На сегодня требований в работе нет.</div>'}`;
+    host.innerHTML=`<div class="today-req-head"><div><h3>Сегодня в работе</h3><small>Источник: Управление проектом → Требования · показываются все требования, период которых пересекает сегодняшний день</small></div><small>${list.length} поз.</small></div>${list.length?`<div class="today-req-wrap"><table class="today-req-table"><thead><tr><th>Команда</th><th style="min-width:250px">Что нужно</th><th>Этап Ганта</th><th>Период</th><th>Дата закрытия</th><th>До закрытия</th><th>Статус</th><th>Ответственный за ответ</th><th>Комментарий</th></tr></thead><tbody>${list.map(x=>`<tr data-today-team="${esc(x.req.team)}"><td class="today-req-team">${esc(x.req.team)}</td><td>${esc(x.req.text)}</td><td class="today-req-stage">${x.req.stageId}. ${esc(core().stageName(x.req.stageId))}</td><td class="today-req-period">${esc(periodText(x))}${x.p?.customTimes?'<br><span style="font-size:8px;color:var(--muted)">индивидуальный срок</span>':''}</td><td class="today-req-close">${esc(closingText(x))}</td><td class="today-req-remaining">${esc(remaining(x.b.end,x.state))}</td><td><span class="today-status ${statusClass(x.state,x.status)}">${esc(x.status)}</span></td><td class="today-req-owner">${esc(x.owner)}</td><td class="today-req-comment">${esc(x.comment||'')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="today-req-empty">На сегодня требований в работе нет.</div>'}`;
   }
 
   document.addEventListener('click',e=>{
