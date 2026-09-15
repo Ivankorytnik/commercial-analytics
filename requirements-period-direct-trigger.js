@@ -1,5 +1,5 @@
 (function(){
-  const VERSION='2.1.0';
+  const VERSION='2.1.1';
   let modal=null;
   let activeId='';
 
@@ -17,7 +17,7 @@
       .req-period-modal h3{margin:0 0 5px;font-size:18px;color:#183536}.req-period-modal-sub{font-size:10px;color:#66797a;line-height:1.45;margin-bottom:14px}
       .req-period-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.req-period-modal-field label{display:block;font-size:9px;color:#647778;margin-bottom:5px}.req-period-modal-field input{width:100%;box-sizing:border-box;border:1px solid #c6d5d5;border-radius:8px;padding:10px;font:inherit;font-size:12px;background:#fff;color:#183536}
       .req-period-modal-info{margin-top:10px;padding:8px 10px;border-radius:8px;background:#f2f7f7;color:#526768;font-size:9px;line-height:1.45}.req-period-modal-error{display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:#fff0ed;color:#a33b30;font-size:10px}
-      .req-period-modal-actions{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap}.req-period-modal-right{display:flex;gap:7px}.req-period-modal .btn{cursor:pointer}.req-period-modal .btn.primary{background:#0f756d;color:#fff;border-color:#0f756d}
+      .req-period-modal-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap}.req-period-modal-right{display:flex;gap:7px}.req-period-modal .btn{cursor:pointer}.req-period-modal .btn.primary{background:#0f756d;color:#fff;border-color:#0f756d}
       @media(max-width:560px){.req-period-modal-grid{grid-template-columns:1fr}.req-period-modal-actions{align-items:stretch}.req-period-modal-right{width:100%}.req-period-modal-right .btn{flex:1}}
     `;
     document.head.appendChild(s);
@@ -42,7 +42,6 @@
       <div class="req-period-modal-info">После сохранения начало устанавливается на 00:00, окончание на 23:59. Индивидуальный период используется для срока требования, просрочки и связанных блокеров.</div>
       <div class="req-period-modal-error" data-rpm-error></div>
       <div class="req-period-modal-actions">
-        <button type="button" class="btn" data-rpm-reset ${p.customTimes?'':'disabled'}>По Ганту</button>
         <div class="req-period-modal-right"><button type="button" class="btn" data-rpm-cancel>Отмена</button><button type="button" class="btn primary" data-rpm-save>Сохранить</button></div>
       </div>
     </div>`;
@@ -70,14 +69,6 @@
     close();refresh();
   }
 
-  function reset(){
-    if(!activeId)return;
-    time()?.resetTimes?.(activeId);
-    close();refresh();
-  }
-
-  // Window capture runs before document capture. This prevents requirements-time.js
-  // from replacing the table cell inline and avoids MutationObserver redraw conflicts.
   window.addEventListener('click',e=>{
     const edit=e.target?.closest?.('.req-period-edit');
     if(edit){
@@ -89,7 +80,6 @@
     }
     if(!modal)return;
     if(e.target.closest?.('[data-rpm-save]')){e.preventDefault();e.stopImmediatePropagation();save();return;}
-    if(e.target.closest?.('[data-rpm-reset]')){e.preventDefault();e.stopImmediatePropagation();reset();return;}
     if(e.target.closest?.('[data-rpm-cancel]')){e.preventDefault();e.stopImmediatePropagation();close();return;}
     if(e.target===modal){e.preventDefault();e.stopImmediatePropagation();close();}
   },true);
