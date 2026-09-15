@@ -5,6 +5,7 @@
   const originalRemove=Storage.prototype.removeItem;
   const originalClear=Storage.prototype.clear;
   let hydrated=false,pulling=false,flushing=false,lastError='',retryTimer=null,retryDelay=1000;
+  let localMutationSeq=0,pullNeedsRefresh=false,refreshTimer=null;
   const MAX_RETRY=30000;
   const queue=new Map();
   const remoteKnown=new Set();
@@ -26,6 +27,14 @@
     batch.forEach(([key,item])=>{const current=queue.get(key);if(!current||String(item.ts)>String(current.ts))queue.set(key,item);});
   }
   function scheduleRetry(){clearTimeout(retryTimer);const delay=retryDelay;retryDelay=Math.min(MAX_RETRY,retryDelay*2);retryTimer=setTimeout(flushQueue,delay);dispatchStatus('error',`Ошибка синхронизации · повтор через ${Math.ceil(delay/1000)} c`);}
+  function scheduleFreshPull(){
+    if(refreshTimer||!hydrated)return;
+    refreshTimer=setTimeout(()=>{
+      refreshTimer=null;
+      if(!pulling&&!flushing&&!queue.size)pull();
+      else pullNeedsRefresh=true;
+    },150);
+  }
 
   async function flushQueue(){
     if(flushing||!hydrated||!queue.size)return;
@@ -43,19 +52,44 @@
       lastError='';retryDelay=1000;clearTimeout(retryTimer);dispatchStatus('synced',`Синхронизировано ${nowLabel()}`);
     }catch(e){
       console.error('sync flush failed',e);lastError=String(e?.message||e);restoreBatch(batch);scheduleRetry();
-    }finally{flushing=false;if(queue.size&&!retryTimer)retryTimer=setTimeout(flushQueue,250);}
+    }finally{
+      flushing=false;
+      if(queue.size&&!retryTimer)retryTimer=setTimeout(flushQueue,250);
+      if(pullNeedsRefresh&&!queue.size&&!lastError){pullNeedsRefresh=false;scheduleFreshPull();}
+    }
   }
 
-  Storage.prototype.setItem=function(key,value){originalSet.call(this,key,value);if(this===window.localStorage&&hydrated)enqueue(key,'set',value);};
-  Storage.prototype.removeItem=function(key){originalRemove.call(this,key);if(this===window.localStorage&&hydrated)enqueue(key,'delete');};
-  Storage.prototype.clear=function(){if(this!==window.localStorage)return originalClear.call(this);const keys=[];for(let i=0;i<this.length;i++){const k=this.key(i);if(managed(k))keys.push(k);}originalClear.call(this);if(hydrated)keys.forEach(k=>enqueue(k,'delete'));};
+  Storage.prototype.setItem=function(key,value){
+    originalSet.call(this,key,value);
+    if(this===window.localStorage&&managed(key)){
+      localMutationSeq++;
+      enqueue(key,'set',value);
+    }
+  };
+  Storage.prototype.removeItem=function(key){
+    originalRemove.call(this,key);
+    if(this===window.localStorage&&managed(key)){
+      localMutationSeq++;
+      enqueue(key,'delete');
+    }
+  };
+  Storage.prototype.clear=function(){
+    if(this!==window.localStorage)return originalClear.call(this);
+    const keys=[];for(let i=0;i<this.length;i++){const k=this.key(i);if(managed(k))keys.push(k);}
+    originalClear.call(this);
+    if(keys.length)localMutationSeq++;
+    keys.forEach(k=>enqueue(k,'delete'));
+  };
 
   async function hydrate(){
     let changed=false;
+    const seqAtStart=localMutationSeq;
     try{
       dispatchStatus('loading','Синхронизация...');
       const rows=await api('GET','select=key,value,updated_at&order=updated_at.asc');
-      if(Array.isArray(rows)&&rows.length){
+      if(localMutationSeq!==seqAtStart||queue.size){
+        pullNeedsRefresh=true;
+      }else if(Array.isArray(rows)&&rows.length){
         const remoteKeys=new Set();rows.forEach(r=>{if(!managed(r.key))return;remoteKeys.add(r.key);remoteKnown.add(r.key);if(localStorage.getItem(r.key)!==r.value){originalSet.call(localStorage,r.key,r.value);changed=true;}});
         const stale=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(managed(k)&&!remoteKeys.has(k))stale.push(k);}stale.forEach(k=>{originalRemove.call(localStorage,k);changed=true;});
       }else{
@@ -63,22 +97,39 @@
       }
       lastError='';retryDelay=1000;dispatchStatus('synced',`Синхронизировано ${nowLabel()}`);
     }catch(e){console.error('sync hydrate failed',e);lastError=String(e?.message||e);dispatchStatus('error','Ошибка первичной синхронизации · локальная работа доступна');}
-    finally{hydrated=true;window.dispatchEvent(new CustomEvent('atom-sync-ready'));if(changed)window.dispatchEvent(new CustomEvent('atom-sync-update'));if(queue.size)flushQueue();}
+    finally{
+      hydrated=true;
+      window.dispatchEvent(new CustomEvent('atom-sync-ready'));
+      if(changed)window.dispatchEvent(new CustomEvent('atom-sync-update'));
+      if(queue.size)flushQueue();
+      else if(pullNeedsRefresh&&!lastError){pullNeedsRefresh=false;scheduleFreshPull();}
+    }
   }
 
   async function pull(){
-    if(pulling||flushing||queue.size)return;pulling=true;let changed=false;
+    if(pulling||flushing||queue.size)return;
+    pulling=true;
+    let changed=false;
+    const seqAtStart=localMutationSeq;
     try{
       const rows=await api('GET','select=key,value,updated_at&order=updated_at.asc');
+      if(localMutationSeq!==seqAtStart||flushing||queue.size){
+        pullNeedsRefresh=true;
+        return;
+      }
       if(Array.isArray(rows)){
         const remoteKeys=new Set();rows.forEach(r=>{if(!managed(r.key))return;remoteKeys.add(r.key);remoteKnown.add(r.key);if(localStorage.getItem(r.key)!==r.value){originalSet.call(localStorage,r.key,r.value);changed=true;}});
         const stale=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(managed(k)&&remoteKnown.has(k)&&!remoteKeys.has(k))stale.push(k);}stale.forEach(k=>{originalRemove.call(localStorage,k);remoteKnown.delete(k);changed=true;});
       }
       lastError='';retryDelay=1000;dispatchStatus('synced',`Синхронизировано ${nowLabel()}`);
     }catch(e){console.error('sync pull failed',e);lastError=String(e?.message||e);dispatchStatus('error','Ошибка синхронизации · локальные данные сохранены');}
-    finally{pulling=false;if(changed)window.dispatchEvent(new CustomEvent('atom-sync-update'));}
+    finally{
+      pulling=false;
+      if(changed)window.dispatchEvent(new CustomEvent('atom-sync-update'));
+      if(pullNeedsRefresh&&!flushing&&!queue.size&&!lastError){pullNeedsRefresh=false;scheduleFreshPull();}
+    }
   }
 
-  window.ATOM_SYNC={pull,flush:flushQueue,status:()=>({hydrated,pulling,flushing,pending:queue.size,error:lastError,retryDelay})};
+  window.ATOM_SYNC={pull,flush:flushQueue,status:()=>({hydrated,pulling,flushing,pending:queue.size,error:lastError,retryDelay,localMutationSeq,pullNeedsRefresh})};
   hydrate();setInterval(pull,15000);
 })();
