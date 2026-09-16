@@ -1,5 +1,5 @@
 (function(){
-  const VERSION='2.1.0';
+  const VERSION='2.1.1';
   let queued=false;
   let lastSig='';
 
@@ -68,16 +68,17 @@
       (c.requirementsByTeam?.(team)||[]).forEach(req=>{
         if(seen.has(req.id))return;
         seen.add(req.id);
-        // Удаленные требования никогда не показываем. Все остальные фильтруются только по периоду.
+        // Удаленные требования никогда не показываем.
         if(c.isRequirementDeleted?.(req.id))return;
         const state=c.getState(req.id);
         const p=c.periodForRequirement(req),b=bounds(p);
-        // "Сегодня в работе" = любое требование, период которого пересекает сегодняшний календарный день.
-        // Статус, актуальность и активность команды не должны скрывать пункт, если дата попадает в период.
+        // "Сегодня в работе" = требование, период которого пересекает сегодняшний календарный день,
+        // при этом завершенные требования со статусом "Готово" не отображаются.
         const activeToday=b.start<=dayEnd&&b.end>=dayStart;
         if(!activeToday)return;
-        const owner=c.personName(state.respondentId)||c.teamOwner(req.team)||'Не назначен';
         const status=statusLabel(req,state);
+        if(state?.statusId==='done'||String(status).trim().toLowerCase()==='готово')return;
+        const owner=c.personName(state.respondentId)||c.teamOwner(req.team)||'Не назначен';
         out.push({req,state,p,b,owner,status,comment:String(state.comment||'').trim()});
       });
     });
@@ -129,7 +130,7 @@
     const hasRequirementsMarkup=Boolean(host.querySelector('.today-req-table,.today-req-empty'));
     if(sig===lastSig&&host.dataset.todaySource==='requirements'&&hasRequirementsMarkup)return;
     lastSig=sig;host.dataset.todaySource='requirements';
-    host.innerHTML=`<div class="today-req-head"><div><h3>Сегодня в работе</h3><small>Источник: Управление проектом → Требования · показываются все требования, период которых пересекает сегодняшний день</small></div><small>${list.length} поз.</small></div>${list.length?`<div class="today-req-wrap"><table class="today-req-table"><thead><tr><th>Команда</th><th style="min-width:250px">Что нужно</th><th>Этап Ганта</th><th>Период</th><th>Дата закрытия</th><th>До закрытия</th><th>Статус</th><th>Ответственный за ответ</th><th>Комментарий</th></tr></thead><tbody>${list.map(x=>`<tr data-today-team="${esc(x.req.team)}"><td class="today-req-team">${esc(x.req.team)}</td><td>${esc(x.req.text)}</td><td class="today-req-stage">${x.req.stageId}. ${esc(core().stageName(x.req.stageId))}</td><td class="today-req-period">${esc(periodText(x))}${x.p?.customTimes?'<br><span style="font-size:8px;color:var(--muted)">индивидуальный срок</span>':''}</td><td class="today-req-close">${esc(closingText(x))}</td><td class="today-req-remaining">${esc(remaining(x.b.end,x.state))}</td><td><span class="today-status ${statusClass(x.state,x.status)}">${esc(x.status)}</span></td><td class="today-req-owner">${esc(x.owner)}</td><td class="today-req-comment">${esc(x.comment||'')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="today-req-empty">На сегодня требований в работе нет.</div>'}`;
+    host.innerHTML=`<div class="today-req-head"><div><h3>Сегодня в работе</h3><small>Источник: Управление проектом → Требования · показываются требования, период которых пересекает сегодняшний день, кроме статуса «Готово»</small></div><small>${list.length} поз.</small></div>${list.length?`<div class="today-req-wrap"><table class="today-req-table"><thead><tr><th>Команда</th><th style="min-width:250px">Что нужно</th><th>Этап Ганта</th><th>Период</th><th>Дата закрытия</th><th>До закрытия</th><th>Статус</th><th>Ответственный за ответ</th><th>Комментарий</th></tr></thead><tbody>${list.map(x=>`<tr data-today-team="${esc(x.req.team)}"><td class="today-req-team">${esc(x.req.team)}</td><td>${esc(x.req.text)}</td><td class="today-req-stage">${x.req.stageId}. ${esc(core().stageName(x.req.stageId))}</td><td class="today-req-period">${esc(periodText(x))}${x.p?.customTimes?'<br><span style="font-size:8px;color:var(--muted)">индивидуальный срок</span>':''}</td><td class="today-req-close">${esc(closingText(x))}</td><td class="today-req-remaining">${esc(remaining(x.b.end,x.state))}</td><td><span class="today-status ${statusClass(x.state,x.status)}">${esc(x.status)}</span></td><td class="today-req-owner">${esc(x.owner)}</td><td class="today-req-comment">${esc(x.comment||'')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="today-req-empty">На сегодня требований в работе нет.</div>'}`;
   }
 
   document.addEventListener('click',e=>{
