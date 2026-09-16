@@ -1,9 +1,11 @@
 (function(){
-  const VERSION='1.2.0';
+  const VERSION='1.3.0';
   const ALL='__all__';
   const SESSION_KEY='atom-pa-requirements-team-filter';
   const STABLE_KEY='atom-requirements-stable-team-filter';
   const DRAFTS_KEY='atom-pa-requirement-drafts-v1';
+  const PICKER_LOCK_MS=90000;
+  const PICKER_RELEASE_MS=2500;
   const SELECTOR=[
     '#req-enh-team','#pa-req-team',
     '[data-req-enh-status]','select[data-pa-req-status]',
@@ -13,7 +15,12 @@
     '#pa-new-req','#pa-new-req-stage','[data-pa-req-comment]',
     '#pa-panel input','#pa-panel textarea','#pa-panel select'
   ].join(',');
-  const DRAFT_SELECTOR='#pa-new-req,#pa-new-req-stage';
+  const DRAFT_SELECTOR=[
+    '#pa-new-req','#pa-new-req-stage',
+    '#pa-new-req-start-date','#pa-new-req-start-time',
+    '#pa-new-req-end-date','#pa-new-req-end-time'
+  ].join(',');
+  const PICKER_SELECTOR='#pa-panel input[type="date"],#pa-panel input[type="time"],#pa-panel input[type="datetime-local"]';
   const GUARDED_EVENTS=[
     'atom-core-data-changed','atom-sync-update','atom-view-rendered',
     'atom-reference-data-changed','atom-project-reconciled'
@@ -21,6 +28,7 @@
 
   let lockUntil=0;
   let activeControl=null;
+  let lockTimer=null;
   const pending=new Map();
   let flushQueued=false;
   let restoreQueued=false;
@@ -31,6 +39,7 @@
 
   const inRequirements=()=>location.hash.startsWith('#management/requirements');
   const isGuarded=el=>Boolean(el?.matches?.(SELECTOR));
+  const isPicker=el=>Boolean(el?.matches?.(PICKER_SELECTOR));
   const hasActiveFocus=()=>Boolean(activeControl?.isConnected&&document.activeElement===activeControl);
   const isLocked=()=>inRequirements()&&(Date.now()<lockUntil||hasActiveFocus());
   const isDraft=el=>Boolean(el?.matches?.(DRAFT_SELECTOR));
@@ -74,8 +83,17 @@
     const team=currentTeam();
     if(!team||team===ALL)return;
     const stage=document.getElementById('pa-new-req-stage');
+    const sd=document.getElementById('pa-new-req-start-date');
+    const st=document.getElementById('pa-new-req-start-time');
+    const ed=document.getElementById('pa-new-req-end-date');
+    const et=document.getElementById('pa-new-req-end-time');
     const drafts=readDrafts();
-    drafts[team]={text:input.value||'',stage:stage?.value||'1'};
+    const next={...(drafts[team]||{}),text:input.value||'',stage:stage?.value||'1'};
+    if(sd)next.startDate=sd.value||'';
+    if(st)next.startTime=st.value||'';
+    if(ed)next.endDate=ed.value||'';
+    if(et)next.endTime=et.value||'';
+    drafts[team]=next;
     writeDrafts(drafts);
     rememberDraftFocus(document.activeElement);
   }
@@ -96,8 +114,16 @@
     const draft=readDrafts()[team];
     if(!draft)return;
     const stage=document.getElementById('pa-new-req-stage');
+    const sd=document.getElementById('pa-new-req-start-date');
+    const st=document.getElementById('pa-new-req-start-time');
+    const ed=document.getElementById('pa-new-req-end-date');
+    const et=document.getElementById('pa-new-req-end-time');
     if(input.value!==String(draft.text||''))input.value=String(draft.text||'');
     if(stage&&draft.stage&&stage.value!==String(draft.stage))stage.value=String(draft.stage);
+    if(sd&&Object.prototype.hasOwnProperty.call(draft,'startDate')&&sd.value!==String(draft.startDate||''))sd.value=String(draft.startDate||'');
+    if(st&&Object.prototype.hasOwnProperty.call(draft,'startTime')&&st.value!==String(draft.startTime||''))st.value=String(draft.startTime||'');
+    if(ed&&Object.prototype.hasOwnProperty.call(draft,'endDate')&&ed.value!==String(draft.endDate||''))ed.value=String(draft.endDate||'');
+    if(et&&Object.prototype.hasOwnProperty.call(draft,'endTime')&&et.value!==String(draft.endTime||''))et.value=String(draft.endTime||'');
     if(draftEditing&&draftFocusId){
       const target=document.getElementById(draftFocusId);
       if(target&&document.activeElement!==target){
@@ -119,16 +145,27 @@
     });
   }
 
+  function scheduleLockCheck(delay){
+    clearTimeout(lockTimer);
+    lockTimer=setTimeout(()=>{
+      lockTimer=null;
+      if(!isLocked())flushPending();
+    },Math.max(50,Number(delay)||50));
+  }
+
   function lock(control,ms=30000){
     if(!inRequirements()||!isGuarded(control))return;
     activeControl=control;
-    lockUntil=Math.max(lockUntil,Date.now()+ms);
+    const hold=isPicker(control)?PICKER_LOCK_MS:ms;
+    lockUntil=Math.max(lockUntil,Date.now()+hold);
+    scheduleLockCheck(hold+80);
     rememberTeam(control);
     rememberDraftFocus(control);
     try{control.focus({preventScroll:true});}catch{try{control.focus();}catch{}}
   }
 
   function unlock(){
+    clearTimeout(lockTimer);lockTimer=null;
     lockUntil=0;
     activeControl=null;
     flushPending();
@@ -170,7 +207,7 @@
   },true);
 
   document.addEventListener('input',e=>{
-    if(e.target?.id!=='pa-new-req')return;
+    if(!isDraft(e.target))return;
     rememberDraftFocus(e.target);
     saveDraftFromDom();
   },true);
@@ -182,6 +219,12 @@
     if(isDraft(control)){
       rememberDraftFocus(control);
       saveDraftFromDom();
+      if(control.id==='pa-new-req-stage')setTimeout(saveDraftFromDom,40);
+      if(isPicker(control)){
+        lockUntil=Date.now()+PICKER_RELEASE_MS;
+        activeControl=document.activeElement===control?control:null;
+        scheduleLockCheck(PICKER_RELEASE_MS+80);
+      }
       return;
     }
     if(control.id==='pa-req-team'){
@@ -208,6 +251,15 @@
 
   document.addEventListener('focusout',e=>{
     if(!isGuarded(e.target))return;
+    if(isPicker(e.target)){
+      activeControl=null;
+      draftEditing=false;
+      draftFocusId='';
+      const remain=lockUntil-Date.now();
+      if(remain<=0)setTimeout(flushPending,0);
+      else scheduleLockCheck(remain+80);
+      return;
+    }
     setTimeout(()=>{
       const next=document.activeElement;
       if(next&&isGuarded(next)){
