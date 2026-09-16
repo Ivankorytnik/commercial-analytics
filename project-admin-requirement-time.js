@@ -1,6 +1,7 @@
 (function(){
-  const VERSION='1.0.1';
+  const VERSION='1.0.2';
   const META_PREFIX='atom-core-requirement-meta-';
+  const RESET_FLAG='atom-pa-requirement-form-reset-once';
   let queued=false;
 
   const pad=n=>String(n).padStart(2,'0');
@@ -29,6 +30,16 @@
     return{start,end};
   }
 
+  function consumeResetFlag(){
+    try{
+      if(sessionStorage.getItem(RESET_FLAG)==='1'){
+        sessionStorage.removeItem(RESET_FLAG);
+        return true;
+      }
+    }catch{}
+    return false;
+  }
+
   function styles(){
     if(document.getElementById('pa-requirement-time-css'))return;
     const s=document.createElement('style');s.id='pa-requirement-time-css';s.textContent=`
@@ -47,17 +58,23 @@
     if(!form||!stage||!button)return;
     styles();form.classList.add('pa-time-add');
     if(document.getElementById('pa-new-req-start-date'))return;
-    const d=periodDefaults(stage.value);
+    const reset=consumeResetFlag();
+    const d=reset?{start:{date:'',time:''},end:{date:'',time:''}}:periodDefaults(stage.value);
     const html=`
       <div class="pa-field pa-time-field"><label>Дата начала</label><input id="pa-new-req-start-date" type="date" value="${d.start.date}" required></div>
-      <div class="pa-field pa-time-field"><label>Время начала</label><input id="pa-new-req-start-time" type="time" step="60" value="${d.start.time||'09:00'}" required></div>
+      <div class="pa-field pa-time-field"><label>Время начала</label><input id="pa-new-req-start-time" type="time" step="60" value="${d.start.time}" required></div>
       <div class="pa-field pa-time-field"><label>Дата окончания</label><input id="pa-new-req-end-date" type="date" value="${d.end.date}" required></div>
-      <div class="pa-field pa-time-field"><label>Время окончания</label><input id="pa-new-req-end-time" type="time" step="60" value="${d.end.time||'18:00'}" required></div>`;
+      <div class="pa-field pa-time-field"><label>Время окончания</label><input id="pa-new-req-end-time" type="time" step="60" value="${d.end.time}" required></div>`;
     button.insertAdjacentHTML('beforebegin',html);
+    if(reset){
+      const input=document.getElementById('pa-new-req');
+      if(input)input.value='';
+      stage.selectedIndex=-1;
+    }
   }
 
   function refreshDefaults(){
-    const stage=document.getElementById('pa-new-req-stage');if(!stage)return;
+    const stage=document.getElementById('pa-new-req-stage');if(!stage||!stage.value)return;
     const d=periodDefaults(stage.value);
     const sd=document.getElementById('pa-new-req-start-date'),st=document.getElementById('pa-new-req-start-time'),ed=document.getElementById('pa-new-req-end-date'),et=document.getElementById('pa-new-req-end-time');
     if(sd)sd.value=d.start.date;if(st)st.value=d.start.time||'09:00';if(ed)ed.value=d.end.date;if(et)et.value=d.end.time||'18:00';
@@ -77,17 +94,37 @@
     });
   }
 
+  function resetFormAfterAdd(team){
+    try{window.ATOM_REQUIREMENTS_INTERACTION_STABILITY?.clearDraft?.(team);}catch{}
+    try{sessionStorage.setItem(RESET_FLAG,'1');}catch{}
+    const input=document.getElementById('pa-new-req');
+    const stage=document.getElementById('pa-new-req-stage');
+    const sd=document.getElementById('pa-new-req-start-date');
+    const st=document.getElementById('pa-new-req-start-time');
+    const ed=document.getElementById('pa-new-req-end-date');
+    const et=document.getElementById('pa-new-req-end-time');
+    if(input)input.value='';
+    if(stage)stage.selectedIndex=-1;
+    if(sd)sd.value='';
+    if(st)st.value='';
+    if(ed)ed.value='';
+    if(et)et.value='';
+  }
+
   function addRequirement(){
     const c=window.ATOM_CORE;
     const text=document.getElementById('pa-new-req')?.value.trim();
     const team=document.getElementById('pa-req-team')?.value||'';
-    const stage=Number(document.getElementById('pa-new-req-stage')?.value||1);
+    const stageEl=document.getElementById('pa-new-req-stage');
+    const stageRaw=stageEl?.value||'';
     const sd=document.getElementById('pa-new-req-start-date')?.value||'';
     const st=document.getElementById('pa-new-req-start-time')?.value||'';
     const ed=document.getElementById('pa-new-req-end-date')?.value||'';
     const et=document.getElementById('pa-new-req-end-time')?.value||'';
     if(!text)return alert('Укажите, что нужно получить');
     if(!team)return alert('Выберите команду');
+    if(!stageRaw)return alert('Выберите этап Ганта');
+    const stage=Number(stageRaw);
     if(!sd||!st||!ed||!et)return alert('Укажите дату и время начала и окончания');
     const startAt=`${sd}T${st}`,endAt=`${ed}T${et}`;
     const startTs=new Date(startAt).getTime(),endTs=new Date(endAt).getTime();
@@ -97,6 +134,7 @@
     const key=`${META_PREFIX}${req.id}`,m=read(key,{})||{};
     m.stageId=stage;m.customStartAt=startAt;m.customEndAt=endAt;m.customStartDate=sd;m.customEndDate=ed;
     write(key,m);
+    resetFormAfterAdd(team);
     c.reconcile?.();
     window.dispatchEvent(new CustomEvent('atom-core-data-changed',{detail:{type:'requirement-add-datetime',id:req.id,startAt,endAt}}));
     setTimeout(()=>window.ATOM_PROJECT_ADMIN?.open?.(),0);
